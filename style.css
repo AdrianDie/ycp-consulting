@@ -189,7 +189,7 @@ nav.main-nav a.current { color: var(--indigo); }
 
 .tile {
   position: relative;
-  background: var(--navy);
+  background: var(--navy) center/cover no-repeat;
   min-height: 340px;
   padding: 24px;
   display: flex;
@@ -198,8 +198,15 @@ nav.main-nav a.current { color: var(--indigo); }
   color: #fff;
   overflow: hidden;
 }
-.tile.light { background: var(--off); color: var(--black); }
+.tile::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(0deg, rgba(5,28,44,0.88) 0%, rgba(5,28,44,0.35) 55%, rgba(5,28,44,0.1) 100%);
+}
+.tile.light { color: #fff; }
 .tile .kicker {
+  position: relative;
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
@@ -207,9 +214,9 @@ nav.main-nav a.current { color: var(--indigo); }
   color: var(--cyan);
   margin-bottom: 12px;
 }
-.tile.light .kicker { color: var(--indigo); }
-.tile h3 { color: inherit; font-size: 24px; line-height: 1.25; font-family: "Public Sans", sans-serif; font-weight: 500; margin-bottom: 20px; }
+.tile h3 { position: relative; color: inherit; font-size: 24px; line-height: 1.25; font-family: "Public Sans", sans-serif; font-weight: 500; margin-bottom: 20px; }
 .tile .tile-btn {
+  position: relative;
   display: inline-block;
   background: #fff;
   color: var(--black);
@@ -218,7 +225,6 @@ nav.main-nav a.current { color: var(--indigo); }
   padding: 8px 20px;
   align-self: flex-start;
 }
-.tile.light .tile-btn { background: var(--navy); color: #fff; }
 
 /* ---------- Sections ---------- */
 section.block {
@@ -339,6 +345,13 @@ h2.statement .accent { color: var(--indigo); }
   margin-top: 48px;
 }
 @media (max-width: 900px) { .article-grid { grid-template-columns: 1fr; } }
+.article-card .thumb {
+  width: 100%;
+  aspect-ratio: 4/3;
+  object-fit: cover;
+  margin-bottom: 20px;
+  background: var(--off);
+}
 .article-card .eyebrow {
   font-size: 12px;
   font-weight: 600;
