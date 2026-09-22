@@ -80,6 +80,7 @@ header.site-header.header-hidden {
 .logo:hover { opacity: 0.72; }
 .logo span { color: var(--indigo); transition: color 0.12s linear; }
 .logo:hover span { color: var(--cyan); }
+.logo-img { display: block; height: 26px; width: auto; }
 nav.main-nav {
   display: flex;
   align-items: center;
