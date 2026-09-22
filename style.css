@@ -75,8 +75,11 @@ header.site-header.header-hidden {
   color: var(--black);
   letter-spacing: 0.2px;
   white-space: nowrap;
+  transition: opacity 0.12s linear;
 }
-.logo span { color: var(--indigo); }
+.logo:hover { opacity: 0.72; }
+.logo span { color: var(--indigo); transition: color 0.12s linear; }
+.logo:hover span { color: var(--cyan); }
 nav.main-nav {
   display: flex;
   align-items: center;
@@ -85,11 +88,28 @@ nav.main-nav {
 }
 .header-inner { position: relative; }
 nav.main-nav a {
+  position: relative;
   color: var(--black);
   font-size: 15px;
   font-weight: 400;
+  padding-bottom: 3px;
 }
+nav.main-nav a::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 1px;
+  background: var(--indigo);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.12s linear;
+}
+nav.main-nav a:hover { color: var(--indigo); opacity: 1; }
+nav.main-nav a:hover::after { transform: scaleX(1); }
 nav.main-nav a.current { color: var(--indigo); }
+nav.main-nav a.current::after { transform: scaleX(1); }
 .btn-cta {
   display: inline-block;
   background: var(--cyan);
@@ -99,8 +119,9 @@ nav.main-nav a.current { color: var(--indigo); }
   padding: 10px 20px;
   border-radius: 0;
   white-space: nowrap;
+  transition: background-color 0.12s linear, transform 0.12s linear;
 }
-.btn-cta:hover { opacity: 0.85; }
+.btn-cta:hover { opacity: 1; background: var(--indigo); color: #fff !important; transform: translateY(-1px); }
 .hamburger {
   display: none;
   width: 24px;
