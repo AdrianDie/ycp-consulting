@@ -53,6 +53,11 @@ header.site-header {
   position: sticky;
   top: 0;
   z-index: 100;
+  transform: translateY(0);
+  transition: transform 0.3s ease;
+}
+header.site-header.header-hidden {
+  transform: translateY(-100%);
 }
 .header-inner {
   max-width: 1160px;
@@ -115,7 +120,10 @@ nav.main-nav a.current { color: var(--indigo); }
 
 /* ---------- Hero (bento navy) ---------- */
 .hero {
-  background: var(--navy);
+  background:
+    linear-gradient(90deg, rgba(5,28,44,0.97) 0%, rgba(5,28,44,0.9) 38%, rgba(5,28,44,0.55) 65%, rgba(5,28,44,0.15) 100%),
+    url('images/hero.jpg') center/cover no-repeat,
+    var(--navy);
   color: #fff;
   padding: 110px 24px 90px;
 }
