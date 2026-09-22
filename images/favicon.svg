@@ -1,4 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <rect width="64" height="64" fill="#051c2c"/>
-  <text x="32" y="43" font-family="Georgia, 'Times New Roman', serif" font-size="34" fill="#2251ff" text-anchor="middle">Y</text>
+  <line x1="14" y1="32" x2="46" y2="32" stroke="#ffffff" stroke-width="6" stroke-linecap="square"/>
+  <path d="M34 18 L48 32 L34 46" fill="none" stroke="#00a9f4" stroke-width="6" stroke-linecap="square" stroke-linejoin="miter"/>
 </svg>
