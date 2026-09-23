@@ -28,6 +28,8 @@ body.workshop-body { background: var(--off); }
 .gate-box input::placeholder { color: #97a3ae; }
 .gate-box .btn-cta { width: 100%; text-align: center; cursor: pointer; border: none; font-family: "Public Sans", sans-serif; }
 .gate-error { color: #ff8080; font-size: 13px; margin-top: 12px; min-height: 18px; }
+.gate-hint { color: #97a3ae; font-size: 13px; margin-top: 20px; line-height: 1.5; }
+.gate-hint a { color: var(--cyan); }
 
 /* ---------- App shell ---------- */
 .app-shell { min-height: 100vh; display: flex; flex-direction: column; }

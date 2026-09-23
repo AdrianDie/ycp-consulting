@@ -1,7 +1,10 @@
 // AI Workflow Discovery — YCP Consulting workshop tool.
-// Talks only to the ycp-workshop-worker Cloudflare Worker (never to Anthropic directly).
+// Bring-your-own-key: each participant enters their own Anthropic API key,
+// and the browser calls api.anthropic.com directly. YCP never sees the key
+// and never pays for anyone's AI usage — every call is billed to the
+// participant's own Anthropic account.
 
-const WORKER_URL = "https://ycp-workshop-worker.dietrichs-mkt.workers.dev";
+const ANTHROPIC_MODEL = "claude-opus-5";
 
 const PHASES = [
   { id: "context", label: "Context" },
@@ -18,7 +21,6 @@ const STORAGE_KEY = "ycpWorkshopState";
 
 function defaultState() {
   return {
-    key: "",
     mode: "fast",
     phase: 0,
     context: { company: "", website: "", industry: "", name: "", role: "", department: "", responsibility: "", painPoints: "" },
@@ -39,6 +41,7 @@ function defaultState() {
 }
 
 let state = loadState();
+let apiKey = sessionStorage.getItem("ycpWorkshopApiKey") || "";
 
 function loadState() {
   try {
@@ -52,20 +55,59 @@ function saveState() {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
 }
 
+function saveApiKey(val) {
+  apiKey = val;
+  // sessionStorage, not localStorage: gone as soon as the tab closes, so a
+  // shared/facilitator laptop doesn't accumulate other people's keys.
+  try { sessionStorage.setItem("ycpWorkshopApiKey", val); } catch {}
+}
+
 // ---------- AI call helper ----------
+// Direct browser -> Anthropic API call, using the participant's own key.
+// Requires the "anthropic-dangerous-direct-browser-access" header — this is
+// Anthropic's official opt-in for bring-your-own-key browser apps like this
+// one (without it every browser-origin request is rejected).
 
 async function callAI({ system, messages, webSearch, maxTokens }) {
-  const res = await fetch(WORKER_URL + "/api/chat", {
+  const tools = webSearch ? [{ type: "web_search_20260209", name: "web_search", max_uses: 4 }] : undefined;
+
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Workshop-Key": state.key },
-    body: JSON.stringify({ system, messages, webSearch: !!webSearch, maxTokens: maxTokens || 4096 }),
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({
+      model: ANTHROPIC_MODEL,
+      max_tokens: Math.min(maxTokens || 4096, 8000),
+      system,
+      messages,
+      ...(tools ? { tools } : {}),
+    }),
   });
-  if (res.status === 401) throw new Error("Feil tilgangskode.");
+
+  if (res.status === 401) throw new Error("Ugyldig API-nøkkel.");
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.message || "AI-kallet feilet. Prøv igjen.");
+    throw new Error((body.error && body.error.message) || "AI-kallet feilet. Prøv igjen.");
   }
-  return res.json(); // { text, sources }
+
+  const data = await res.json();
+  let text = "";
+  const sources = [];
+  for (const block of data.content) {
+    if (block.type === "text") {
+      text += block.text;
+    } else if (block.type === "web_search_tool_result") {
+      const results = Array.isArray(block.content) ? block.content : [];
+      for (const r of results) {
+        if (r.url) sources.push({ title: r.title || r.url, url: r.url });
+      }
+    }
+  }
+  return { text, sources };
 }
 
 // Tolerant JSON extraction: strips markdown fences, finds the first {...} or [...] block.
@@ -106,8 +148,7 @@ function el(html) {
 // ---------- Access gate ----------
 
 function initGate() {
-  const savedKey = state.key;
-  if (savedKey) { showApp(); return; }
+  if (apiKey) { showApp(); return; }
   document.getElementById("gate-submit").addEventListener("click", submitGate);
   document.getElementById("gate-key").addEventListener("keydown", (e) => { if (e.key === "Enter") submitGate(); });
 }
@@ -115,18 +156,18 @@ function initGate() {
 async function submitGate() {
   const val = document.getElementById("gate-key").value.trim();
   const errEl = document.getElementById("gate-error");
-  if (!val) { errEl.textContent = "Skriv inn en kode."; return; }
+  if (!val) { errEl.textContent = "Skriv inn API-nøkkelen din."; return; }
   errEl.textContent = "Sjekker...";
-  const prevKey = state.key;
-  state.key = val;
+  const prevKey = apiKey;
+  apiKey = val;
   try {
-    // Cheap check: a tiny real call, so a wrong code fails fast with a clear message.
+    // Cheap check: a tiny real call, so a bad key fails fast with a clear message.
     await callAI({ system: "Reply with exactly: ok", messages: [{ role: "user", content: "ping" }], maxTokens: 8 });
-    saveState();
+    saveApiKey(val);
     showApp();
   } catch (e) {
-    state.key = prevKey;
-    errEl.textContent = e.message || "Kunne ikke verifisere koden.";
+    apiKey = prevKey;
+    errEl.textContent = e.message || "Kunne ikke verifisere nøkkelen.";
   }
 }
 
