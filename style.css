@@ -80,6 +80,7 @@ header.site-header.header-hidden {
 .logo:hover { opacity: 0.72; }
 .logo span { color: var(--indigo); transition: color 0.12s linear; }
 .logo:hover span { color: var(--cyan); }
+.logo-img { display: block; height: 26px; width: auto; }
 nav.main-nav {
   display: flex;
   align-items: center;
@@ -166,10 +167,7 @@ nav.main-nav a.current::after { transform: scaleX(1); }
 
 /* ---------- Hero (bento navy) ---------- */
 .hero {
-  background:
-    linear-gradient(90deg, rgba(5,28,44,0.97) 0%, rgba(5,28,44,0.9) 38%, rgba(5,28,44,0.55) 65%, rgba(5,28,44,0.15) 100%),
-    url('images/hero.jpg') center/cover no-repeat,
-    var(--navy);
+  background: var(--navy);
   color: #fff;
   padding: 110px 24px 90px;
 }
