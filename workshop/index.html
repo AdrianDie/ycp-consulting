@@ -9,31 +9,20 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;500;600&amp;family=Source+Serif+4:opsz,wght@8..60,300;8..60,400&amp;display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../style.css">
-<link rel="stylesheet" href="workshop.css?v=2">
+<link rel="stylesheet" href="../style.css?v=3">
+<link rel="stylesheet" href="workshop.css?v=3">
 <link rel="icon" type="image/svg+xml" href="../images/favicon.svg">
 </head>
 <body class="workshop-body">
 
-<div id="gate" class="gate">
-  <div class="gate-box">
-    <img src="../images/logo-white.svg" alt="YCP Consulting" style="height:26px; margin-bottom:24px;">
-    <h1>AI Workflow Discovery</h1>
-    <p class="lead">Skriv inn din egen Anthropic API-nøkkel for å starte. Den lagres kun i denne nettleserfanen, og AI-bruken din faktureres til din egen Anthropic-konto — ikke YCP sin.</p>
-    <input id="gate-key" type="password" placeholder="sk-ant-..." autocomplete="off">
-    <button id="gate-submit" class="btn-cta">Fortsett →</button>
-    <p id="gate-error" class="gate-error"></p>
-    <p class="gate-hint">Har du ikke en nøkkel? Opprett en gratis på <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a> (API Keys → Create Key).</p>
-  </div>
-</div>
-
-<div id="app" class="app-shell" hidden>
+<div id="app" class="app-shell">
   <header class="app-header">
-    <img src="../images/logo.svg" alt="YCP Consulting" style="height:22px;">
+    <img src="../images/logo.svg" alt="YCP Consulting" style="height:34px;">
     <div class="app-header-progress">
-      <span id="phase-label">Fase 1 / 9</span>
+      <span id="phase-label">Fase 1 / 8</span>
       <div class="progress-track"><div id="progress-fill" class="progress-fill"></div></div>
     </div>
+    <button id="lang-toggle" class="mode-toggle" title="Switch language / Bytt språk">EN</button>
     <button id="mode-toggle" class="mode-toggle" title="Bytt mellom Fast og Deep mode">Fast mode</button>
   </header>
 

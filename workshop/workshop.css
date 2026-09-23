@@ -232,6 +232,63 @@ body.workshop-body { background: var(--off); }
 .ws-sources { font-size: 12px; color: #767676; margin-top: 8px; }
 .ws-sources a { color: var(--indigo); }
 
+/* ---------- Copy-paste AI step (bring-your-own-Claude) ---------- */
+.copy-steps {
+  list-style: none;
+  counter-reset: cs;
+  margin: 0 0 20px;
+  padding: 0;
+  max-width: 640px;
+}
+.copy-steps li {
+  counter-increment: cs;
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  font-size: 14px;
+  color: var(--ink);
+  margin-bottom: 8px;
+}
+.copy-steps li::before {
+  content: counter(cs);
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--line);
+  color: var(--indigo);
+  font-size: 11px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.prompt-box-wrap { max-width: 640px; margin: 0 0 20px; }
+.prompt-box {
+  background: var(--navy);
+  color: #d7dee6;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 20px;
+  max-height: 320px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+.copy-btn-row { margin-top: 10px; display: flex; align-items: center; gap: 12px; }
+.copy-btn-row .copied-note { font-size: 13px; color: #067aad; opacity: 0; transition: opacity 0.15s linear; }
+.copy-btn-row .copied-note.show { opacity: 1; }
+.paste-back { max-width: 640px; margin: 0 0 24px; }
+.paste-back label { display: block; font-size: 13px; font-weight: 600; color: var(--black); margin-bottom: 6px; }
+.paste-back textarea {
+  width: 100%;
+  min-height: 140px;
+  border: 1px solid var(--line);
+  padding: 12px;
+  font-family: "Public Sans", sans-serif;
+  font-size: 14px;
+}
+.parse-error { color: #b42318; font-size: 13px; margin-top: 8px; }
+
 /* ---------- Pilot brief doc ---------- */
 .brief-doc { background: #fff; border: 1px solid var(--line); padding: 48px; max-width: 760px; font-size: 14.5px; line-height: 1.6; }
 .brief-doc h2 { font-size: 22px; margin: 28px 0 8px; }

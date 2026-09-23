@@ -1,34 +1,20 @@
 // AI Workflow Discovery — YCP Consulting workshop tool.
-// Bring-your-own-key: each participant enters their own Anthropic API key,
-// and the browser calls api.anthropic.com directly. YCP never sees the key
-// and never pays for anyone's AI usage — every call is billed to the
-// participant's own Anthropic account.
+// Bring-your-own-Claude: no API key, no backend. Each step shows a ready-made
+// prompt to copy into the participant's own Claude.ai conversation; they paste
+// the result back in, and the tool parses/renders it. Bilingual (NO/EN).
 
-const ANTHROPIC_MODEL = "claude-opus-5";
-
-const PHASES = [
-  { id: "context", label: "Context" },
-  { id: "workflow", label: "Workflow" },
-  { id: "opportunities", label: "Opportunities" },
-  { id: "prioritize", label: "Prioritize" },
-  { id: "deepdive", label: "Deep Dive" },
-  { id: "solutions", label: "Solutions" },
-  { id: "pilot", label: "Pilot" },
-  { id: "brief", label: "Brief" },
-];
-
+const PHASES = ["context", "workflow", "opportunities", "prioritize", "deepdive", "solutions", "pilot", "brief"];
 const STORAGE_KEY = "ycpWorkshopState";
 
 function defaultState() {
   return {
+    lang: "no",
     mode: "fast",
     phase: 0,
     context: { company: "", website: "", industry: "", name: "", role: "", department: "", responsibility: "", painPoints: "" },
     companyResearch: null,
     workflowActivities: [],
     workflowSub: "list",
-    interviewMessages: [],
-    interviewTurns: 0,
     workflowMap: null,
     opportunities: [],
     selectedOpportunityId: null,
@@ -41,7 +27,6 @@ function defaultState() {
 }
 
 let state = loadState();
-let apiKey = sessionStorage.getItem("ycpWorkshopApiKey") || "";
 
 function loadState() {
   try {
@@ -55,62 +40,13 @@ function saveState() {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
 }
 
-function saveApiKey(val) {
-  apiKey = val;
-  // sessionStorage, not localStorage: gone as soon as the tab closes, so a
-  // shared/facilitator laptop doesn't accumulate other people's keys.
-  try { sessionStorage.setItem("ycpWorkshopApiKey", val); } catch {}
+function t(key) {
+  const dict = T[state.lang] || T.no;
+  return (key in dict) ? dict[key] : (T.no[key] || key);
 }
 
-// ---------- AI call helper ----------
-// Direct browser -> Anthropic API call, using the participant's own key.
-// Requires the "anthropic-dangerous-direct-browser-access" header — this is
-// Anthropic's official opt-in for bring-your-own-key browser apps like this
-// one (without it every browser-origin request is rejected).
+// ---------- Helpers ----------
 
-async function callAI({ system, messages, webSearch, maxTokens }) {
-  const tools = webSearch ? [{ type: "web_search_20260209", name: "web_search", max_uses: 4 }] : undefined;
-
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
-    },
-    body: JSON.stringify({
-      model: ANTHROPIC_MODEL,
-      max_tokens: Math.min(maxTokens || 4096, 8000),
-      system,
-      messages,
-      ...(tools ? { tools } : {}),
-    }),
-  });
-
-  if (res.status === 401) throw new Error("Ugyldig API-nøkkel.");
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error((body.error && body.error.message) || "AI-kallet feilet. Prøv igjen.");
-  }
-
-  const data = await res.json();
-  let text = "";
-  const sources = [];
-  for (const block of data.content) {
-    if (block.type === "text") {
-      text += block.text;
-    } else if (block.type === "web_search_tool_result") {
-      const results = Array.isArray(block.content) ? block.content : [];
-      for (const r of results) {
-        if (r.url) sources.push({ title: r.title || r.url, url: r.url });
-      }
-    }
-  }
-  return { text, sources };
-}
-
-// Tolerant JSON extraction: strips markdown fences, finds the first {...} or [...] block.
 function extractJSON(text) {
   const cleaned = text.replace(/```json/gi, "```").replace(/```/g, "");
   const startObj = cleaned.indexOf("{");
@@ -140,41 +76,62 @@ function escapeHTML(str) {
 }
 
 function el(html) {
-  const t = document.createElement("template");
-  t.innerHTML = html.trim();
-  return t.content.firstElementChild;
+  const tpl = document.createElement("template");
+  tpl.innerHTML = html.trim();
+  return tpl.content.firstElementChild;
 }
 
-// ---------- Access gate ----------
+// ---------- Reusable copy-prompt / paste-result block ----------
 
-function initGate() {
-  if (apiKey) { showApp(); return; }
-  document.getElementById("gate-submit").addEventListener("click", submitGate);
-  document.getElementById("gate-key").addEventListener("keydown", (e) => { if (e.key === "Enter") submitGate(); });
-}
+function renderCopyPasteBlock(container, promptText, onContinue, opts) {
+  opts = opts || {};
+  container.appendChild(el(`
+    <ol class="copy-steps">
+      <li>${t("csStep1")}</li>
+      <li>${t("csStep2")}</li>
+      <li>${t("csStep3")}</li>
+    </ol>
+  `));
 
-async function submitGate() {
-  const val = document.getElementById("gate-key").value.trim();
-  const errEl = document.getElementById("gate-error");
-  if (!val) { errEl.textContent = "Skriv inn API-nøkkelen din."; return; }
-  errEl.textContent = "Sjekker...";
-  const prevKey = apiKey;
-  apiKey = val;
-  try {
-    // Cheap check: a tiny real call, so a bad key fails fast with a clear message.
-    await callAI({ system: "Reply with exactly: ok", messages: [{ role: "user", content: "ping" }], maxTokens: 8 });
-    saveApiKey(val);
-    showApp();
-  } catch (e) {
-    apiKey = prevKey;
-    errEl.textContent = e.message || "Kunne ikke verifisere nøkkelen.";
-  }
-}
+  const boxWrap = el(`<div class="prompt-box-wrap"></div>`);
+  const box = document.createElement("div");
+  box.className = "prompt-box";
+  box.textContent = promptText;
+  boxWrap.appendChild(box);
+  const btnRow = el(`
+    <div class="copy-btn-row">
+      <button type="button" class="btn-ghost copy-prompt-btn">${t("copyPrompt")}</button>
+      <span class="copied-note">${t("copied")}</span>
+    </div>
+  `);
+  boxWrap.appendChild(btnRow);
+  container.appendChild(boxWrap);
 
-function showApp() {
-  document.getElementById("gate").hidden = true;
-  document.getElementById("app").hidden = false;
-  render();
+  btnRow.querySelector(".copy-prompt-btn").addEventListener("click", () => {
+    navigator.clipboard.writeText(promptText).then(() => {
+      const note = btnRow.querySelector(".copied-note");
+      note.classList.add("show");
+      setTimeout(() => note.classList.remove("show"), 2000);
+    });
+  });
+
+  const pasteWrap = el(`
+    <div class="paste-back">
+      <label>${opts.pasteLabel || t("pasteLabel")}</label>
+      <textarea placeholder="${escapeHTML(t("pastePlaceholder"))}"></textarea>
+      <div class="btn-row"><button type="button" class="btn-primary">${opts.continueLabel || t("continueBtn")}</button></div>
+      <div class="parse-error"></div>
+    </div>
+  `);
+  container.appendChild(pasteWrap);
+
+  pasteWrap.querySelector("button").addEventListener("click", () => {
+    const val = pasteWrap.querySelector("textarea").value.trim();
+    const errEl = pasteWrap.querySelector(".parse-error");
+    if (!val) { errEl.textContent = t("pasteEmpty"); return; }
+    const ok = onContinue(val);
+    if (ok === false) errEl.textContent = t("parseFailed");
+  });
 }
 
 // ---------- Nav + progress ----------
@@ -182,9 +139,9 @@ function showApp() {
 function renderNav() {
   const nav = document.getElementById("phase-nav");
   const ol = document.createElement("ol");
-  PHASES.forEach((p, i) => {
+  PHASES.forEach((id, i) => {
     const li = document.createElement("li");
-    li.textContent = p.label;
+    li.textContent = t("phase_" + id);
     if (i < state.phase) li.className = "done";
     else if (i === state.phase) li.className = "active";
     ol.appendChild(li);
@@ -192,8 +149,8 @@ function renderNav() {
   nav.innerHTML = "";
   nav.appendChild(ol);
 
-  document.getElementById("phase-label").textContent = `Fase ${state.phase + 1} / ${PHASES.length}`;
-  document.getElementById("progress-fill").style.width = `${((state.phase) / (PHASES.length - 1)) * 100}%`;
+  document.getElementById("phase-label").textContent = `${t("phaseLabel")} ${state.phase + 1} / ${PHASES.length}`;
+  document.getElementById("progress-fill").style.width = `${(state.phase / (PHASES.length - 1)) * 100}%`;
 }
 
 function goToPhase(i) {
@@ -205,9 +162,8 @@ function goToPhase(i) {
 
 function nextPhase() { goToPhase(Math.min(state.phase + 1, PHASES.length - 1)); }
 
-// ---------- Render dispatcher ----------
-
 function render() {
+  document.documentElement.lang = state.lang;
   renderNav();
   const ws = document.getElementById("workspace");
   ws.innerHTML = "";
@@ -225,32 +181,32 @@ function render() {
 function renderContext(ws) {
   ws.appendChild(el(`
     <div>
-      <p class="ws-kicker">Fase 1 / 8 · Context</p>
+      <p class="ws-kicker">${t("phaseLabel")} 1 / 8 · ${t("phase_context")}</p>
       <h1 class="ws-h1">AI Workflow Discovery</h1>
-      <p class="ws-lead">Ikke en presentasjon om AI. Dere bruker AI til å analysere egen arbeidshverdag, finne muligheter, og designe én konkret pilot.</p>
+      <p class="ws-lead">${t("contextLead")}</p>
     </div>
   `));
 
   const form = el(`<form id="context-form"></form>`);
   const fields = [
-    ["company", "Bedrift", "text", state.context.company],
-    ["website", "Nettside", "text", state.context.website],
-    ["industry", "Bransje", "text", state.context.industry],
-    ["name", "Ditt navn", "text", state.context.name],
-    ["role", "Din rolle (f.eks. Drilling Engineer, HR Advisor)", "text", state.context.role],
-    ["department", "Avdeling", "text", state.context.department],
+    ["company", t("fCompany"), state.context.company],
+    ["website", t("fWebsite"), state.context.website],
+    ["industry", t("fIndustry"), state.context.industry],
+    ["name", t("fName"), state.context.name],
+    ["role", t("fRole"), state.context.role],
+    ["department", t("fDepartment"), state.context.department],
   ];
-  fields.forEach(([key, label, type, val]) => {
+  fields.forEach(([key, label, val]) => {
     form.appendChild(el(`
       <div class="field">
         <label>${label}</label>
-        <input name="${key}" type="${type}" value="${escapeHTML(val)}">
+        <input name="${key}" type="text" value="${escapeHTML(val)}">
       </div>
     `));
   });
   form.appendChild(el(`
     <div class="field">
-      <label>Hva er 2–3 ting du bruker mye tid på? (valgfritt)</label>
+      <label>${t("fPainPoints")}</label>
       <textarea name="painPoints">${escapeHTML(state.context.painPoints)}</textarea>
     </div>
   `));
@@ -258,214 +214,166 @@ function renderContext(ws) {
 
   const modeRow = el(`
     <div class="field">
-      <label>Kjøremodus</label>
+      <label>${t("fMode")}</label>
       <select name="mode">
-        <option value="fast" ${state.mode === "fast" ? "selected" : ""}>Fast mode — 60 min</option>
-        <option value="deep" ${state.mode === "deep" ? "selected" : ""}>Deep mode — 90 min</option>
+        <option value="fast" ${state.mode === "fast" ? "selected" : ""}>${t("modeFast")}</option>
+        <option value="deep" ${state.mode === "deep" ? "selected" : ""}>${t("modeDeep")}</option>
       </select>
     </div>
   `);
   ws.appendChild(modeRow);
   modeRow.querySelector("select").addEventListener("change", (e) => {
     state.mode = e.target.value;
-    document.getElementById("mode-toggle").textContent = state.mode === "fast" ? "Fast mode" : "Deep mode";
+    saveState();
+    document.getElementById("mode-toggle").textContent = state.mode === "fast" ? t("modeFastShort") : t("modeDeepShort");
   });
 
   const btnRow = el(`<div class="btn-row">
-    <button id="research-btn" class="btn-ghost">Research bedriften (valgfritt) →</button>
-    <button id="start-btn" class="btn-primary">START DISCOVERY →</button>
+    <button type="button" id="research-btn" class="btn-ghost">${t("researchBtn")}</button>
+    <button type="button" id="start-btn" class="btn-primary">${t("startBtn")}</button>
   </div>`);
   ws.appendChild(btnRow);
 
   const researchOut = el(`<div id="research-out"></div>`);
   ws.appendChild(researchOut);
+  if (state.companyResearch) {
+    researchOut.innerHTML = `<div class="ws-callout"><span class="cl-label">${t("research")}</span><p>${escapeHTML(state.companyResearch)}</p></div>`;
+  }
 
   form.querySelectorAll("input, textarea").forEach((input) => {
     input.addEventListener("input", () => { state.context[input.name] = input.value; saveState(); });
   });
 
-  document.getElementById("research-btn").addEventListener("click", async () => {
-    if (!state.context.company) { alert("Skriv inn bedriftsnavn først."); return; }
-    researchOut.innerHTML = `<p class="chat-thinking">Undersøker ${escapeHTML(state.context.company)}...</p>`;
-    try {
-      const { text, sources } = await callAI({
-        system: "Du er en presis research-assistent for en AI-workshop. Undersøk selskapet brukeren nevner: hva de driver med, bransje, typiske arbeidsprosesser for rollen som er oppgitt, og eventuelle kjente AI-initiativer i bransjen. Bruk websøk. Finn ikke på informasjon — si eksplisitt hva du ikke fant. Svar kort, maks 150 ord, på norsk.",
-        messages: [{ role: "user", content: `Bedrift: ${state.context.company}. Nettside: ${state.context.website}. Bransje: ${state.context.industry}. Rolle: ${state.context.role}.` }],
-        webSearch: true,
-        maxTokens: 700,
-      });
-      state.companyResearch = text;
+  document.getElementById("research-btn").addEventListener("click", () => {
+    researchOut.innerHTML = "";
+    renderCopyPasteBlock(researchOut, researchPrompt(), (pasted) => {
+      state.companyResearch = pasted;
       saveState();
-      researchOut.innerHTML = `<div class="ws-callout"><span class="cl-label">Research</span><p>${escapeHTML(text)}</p>${renderSources(sources)}</div>`;
-    } catch (e) {
-      researchOut.innerHTML = `<p class="gate-error">${escapeHTML(e.message)}</p>`;
-    }
+      researchOut.innerHTML = `<div class="ws-callout"><span class="cl-label">${t("research")}</span><p>${escapeHTML(pasted)}</p></div>`;
+      return true;
+    });
   });
 
   document.getElementById("start-btn").addEventListener("click", () => nextPhase());
 }
 
-function renderSources(sources) {
-  if (!sources || !sources.length) return "";
-  return `<p class="ws-sources">Kilder: ${sources.map((s) => `<a href="${escapeHTML(s.url)}" target="_blank" rel="noopener">${escapeHTML(s.title)}</a>`).join(", ")}</p>`;
+function researchPrompt() {
+  const c = state.context;
+  if (state.lang === "en") {
+    return `I'm preparing for an AI workflow discovery workshop. Research this company using web search: ${c.company || "[company]"} (website: ${c.website || "unknown"}, industry: ${c.industry || "unknown"}). Cover: what they do, industry context, typical work processes for a "${c.role || "[role]"}" role, and any known AI initiatives in this industry. Do not invent information — say explicitly what you couldn't find. Keep it under 150 words, cite your sources.`;
+  }
+  return `Jeg forbereder en AI-discovery-workshop. Undersøk dette selskapet med websøk: ${c.company || "[bedrift]"} (nettside: ${c.website || "ukjent"}, bransje: ${c.industry || "ukjent"}). Dekk: hva de driver med, bransjekontekst, typiske arbeidsprosesser for rollen "${c.role || "[rolle]"}", og eventuelle kjente AI-initiativer i bransjen. Ikke finn på informasjon — si eksplisitt hva du ikke fant. Maks 150 ord, oppgi kildene dine.`;
 }
 
 // ============================================================
-// Phase 1 — Workflow (list → AI interview → workflow map)
+// Phase 1 — Workflow (list → interview prompt → workflow map)
 // ============================================================
 
 function renderWorkflow(ws) {
   if (state.workflowSub === "list") return renderWorkflowList(ws);
-  if (state.workflowSub === "interview") return renderInterview(ws);
+  if (state.workflowSub === "interview") return renderInterviewStep(ws);
   return renderWorkflowMap(ws);
 }
 
 function renderWorkflowList(ws) {
   ws.appendChild(el(`
     <div>
-      <p class="ws-kicker">Fase 2 / 8 · Workflow discovery</p>
-      <h1 class="ws-h1">Hva gjør du i løpet av en normal arbeidsuke?</h1>
-      <p class="ws-lead">Skriv ned 5–10 tilbakevendende oppgaver du gjør som ${escapeHTML(state.context.role) || "i din rolle"}. Ikke tenk AI ennå — bare det du faktisk gjør.</p>
+      <p class="ws-kicker">${t("phaseLabel")} 2 / 8 · ${t("workflowKicker")}</p>
+      <h1 class="ws-h1">${t("workflowH1")}</h1>
+      <p class="ws-lead">${t("workflowLead")}${state.context.role ? " " + escapeHTML(state.context.role) + "." : ""}</p>
     </div>
   `));
   const box = el(`
     <div class="field" style="max-width:640px">
-      <label>Én oppgave per linje</label>
-      <textarea id="activities" rows="10" placeholder="F.eks.\nPrepare drilling reports\nReview offset well data\nAnalyse drilling parameters">${escapeHTML(state.workflowActivities.join("\n"))}</textarea>
+      <label>${t("workflowFieldLabel")}</label>
+      <textarea id="activities" rows="10" placeholder="${escapeHTML(t("workflowPlaceholder"))}">${escapeHTML(state.workflowActivities.join("\n"))}</textarea>
     </div>
   `);
   ws.appendChild(box);
-  ws.appendChild(el(`<div class="btn-row"><button id="to-interview" class="btn-primary">LET AI INTERVIEW YOU →</button></div>`));
+  ws.appendChild(el(`<div class="btn-row"><button type="button" id="to-interview" class="btn-primary">${t("interviewBtn")}</button></div>`));
 
   document.getElementById("to-interview").addEventListener("click", () => {
     const lines = document.getElementById("activities").value.split("\n").map((l) => l.trim()).filter(Boolean);
-    if (lines.length === 0) { alert("Skriv ned minst én oppgave."); return; }
+    if (lines.length === 0) { alert(t("needOneActivity")); return; }
     state.workflowActivities = lines;
     state.workflowSub = "interview";
-    if (state.interviewMessages.length === 0) {
-      state.interviewMessages.push({ role: "assistant", content: `Du nevnte: "${lines[0]}". Gå gjennom nøyaktig hva som skjer fra du starter denne oppgaven til du er ferdig — steg for steg.` });
-    }
     saveState();
     render();
   });
 }
 
-function interviewSystemPrompt() {
-  return `Du er en kritisk, nysgjerrig, praktisk AI-konsulent som intervjuer en ansatt (rolle: ${state.context.role || "ukjent"}, avdeling: ${state.context.department || "ukjent"}, bedrift: ${state.context.company || "ukjent"}) om arbeidsflyten deres, for å forberede en AI-discovery-workshop.
-Oppgaver personen nevnte: ${state.workflowActivities.join("; ")}.
-Still ETT spørsmål om gangen, kort og konkret (maks 2 setninger). Dekk over tid: hva som skjer steg for steg, hvor ofte, hvor lang tid det tar, hvilken info som trengs, hvor informasjonen kommer fra, hva som er vanskelig, hvilke deler krever skjønn, hvilke deler er repetitive, hvor de søker informasjon, hva som forårsaker "rework".
-Ikke foreslå AI-løsninger ennå. Ikke oppsummer med mindre du blir bedt om det. Svar KUN med selve spørsmålet, ingen innledning, på norsk.`;
+function interviewPrompt() {
+  const c = state.context;
+  const n = state.mode === "fast" ? "6–8" : "10–14";
+  if (state.lang === "en") {
+    return `You are a sharp, curious, practical AI consultant interviewing me about my work, ahead of an AI discovery workshop. My role: ${c.role || "[role]"}, department: ${c.department || "[dept]"}, company: ${c.company || "[company]"}.
+Recurring tasks I do: ${state.workflowActivities.join("; ")}.
+
+Interview me about ONE of these tasks at a time. Ask ONE question at a time, short and concrete (max 2 sentences), and wait for my answer before the next question. Cover over the course of the interview: exactly what happens step by step, how often, how long it takes, what information is needed and where it comes from, what's difficult, which parts require judgement vs. are repetitive, where I search for information, and what causes rework. Don't suggest AI solutions yet — just understand the work. Ask around ${n} questions total.
+
+When we're done, output ONLY a JSON array (no other text) describing the workflow as 4–7 ordered steps, each shaped like:
+{"label": "short phase name e.g. Input/Search/Analyse/Judgement/Output", "title": "concrete description", "time": "time estimate", "frequency": "how often", "tools": "tools/systems used", "painPoints": "brief note on what's hard"}
+
+Start by asking your first question now.`;
+  }
+  return `Du er en skarp, nysgjerrig, praktisk AI-konsulent som intervjuer meg om arbeidet mitt, i forkant av en AI-discovery-workshop. Min rolle: ${c.role || "[rolle]"}, avdeling: ${c.department || "[avdeling]"}, bedrift: ${c.company || "[bedrift]"}.
+Tilbakevendende oppgaver jeg gjør: ${state.workflowActivities.join("; ")}.
+
+Intervju meg om ÉN av disse oppgavene om gangen. Still ETT spørsmål om gangen, kort og konkret (maks 2 setninger), og vent på svaret mitt før neste spørsmål. Dekk i løpet av intervjuet: nøyaktig hva som skjer steg for steg, hvor ofte, hvor lang tid det tar, hvilken informasjon som trengs og hvor den kommer fra, hva som er vanskelig, hvilke deler krever skjønn vs. er repetitive, hvor jeg søker informasjon, og hva som forårsaker "rework". Ikke foreslå AI-løsninger ennå — bare forstå arbeidet. Still rundt ${n} spørsmål totalt.
+
+Når vi er ferdige, skriv KUN ut en JSON-liste (ingen annen tekst) som beskriver arbeidsflyten som 4–7 steg i rekkefølge, hver formet slik:
+{"label": "kort fasenavn f.eks. Input/Søk/Analyse/Vurdering/Output", "title": "konkret beskrivelse", "time": "tidsestimat", "frequency": "hvor ofte", "tools": "verktøy/systemer brukt", "painPoints": "kort om hva som er vanskelig"}
+
+Start med å stille det første spørsmålet ditt nå.`;
 }
 
-function renderInterview(ws) {
+function renderInterviewStep(ws) {
   ws.appendChild(el(`
     <div>
-      <p class="ws-kicker">Fase 2 / 8 · AI-intervju</p>
-      <h1 class="ws-h1">Fortell om arbeidsflyten din</h1>
-      <p class="ws-lead">AI-en stiller ett spørsmål om gangen. Svar så konkret du kan. ${state.mode === "fast" ? "5–8" : "8–12"} spørsmål er vanligvis nok.</p>
+      <p class="ws-kicker">${t("phaseLabel")} 2 / 8 · ${t("interviewKicker")}</p>
+      <h1 class="ws-h1">${t("interviewH1")}</h1>
+      <p class="ws-lead">${t("interviewLead")}</p>
     </div>
   `));
 
-  const log = el(`<div class="chat-log"></div>`);
-  state.interviewMessages.forEach((m) => {
-    log.appendChild(el(`<div class="chat-turn ${m.role === "assistant" ? "ai" : "user"}"><div class="chat-bubble2">${escapeHTML(m.content)}</div></div>`));
-  });
-  ws.appendChild(log);
-
-  const inputRow = el(`
-    <div class="chat-input-row">
-      <textarea id="interview-answer" placeholder="Skriv svaret ditt..."></textarea>
-      <button id="interview-send" class="btn-primary">Send</button>
-    </div>
-  `);
-  ws.appendChild(inputRow);
-
-  ws.appendChild(el(`<div class="btn-row">
-    <button id="interview-done" class="btn-ghost">Nok spørsmål — bygg arbeidsflyten →</button>
-  </div>`));
-
-  document.getElementById("interview-send").addEventListener("click", () => sendInterviewAnswer());
-  document.getElementById("interview-answer").addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendInterviewAnswer(); }
-  });
-  document.getElementById("interview-done").addEventListener("click", () => buildWorkflowMap());
-}
-
-async function sendInterviewAnswer() {
-  const ta = document.getElementById("interview-answer");
-  const val = ta.value.trim();
-  if (!val) return;
-  state.interviewMessages.push({ role: "user", content: val });
-  state.interviewTurns++;
-  saveState();
-  render();
-
-  const ws = document.getElementById("workspace");
-  ws.appendChild(el(`<p class="chat-thinking">AI-en tenker...</p>`));
-
-  const targetTurns = state.mode === "fast" ? 6 : 10;
-  if (state.interviewTurns >= targetTurns) {
-    return buildWorkflowMap();
-  }
-
-  try {
-    const { text } = await callAI({
-      system: interviewSystemPrompt(),
-      messages: state.interviewMessages.map((m) => ({ role: m.role, content: m.content })),
-      maxTokens: 300,
-    });
-    state.interviewMessages.push({ role: "assistant", content: text.trim() });
-    saveState();
-    render();
-  } catch (e) {
-    alert(e.message);
-    render();
-  }
-}
-
-async function buildWorkflowMap() {
-  const ws = document.getElementById("workspace");
-  ws.innerHTML = `<p class="chat-thinking">Bygger arbeidsflyt-kartet...</p>`;
-  try {
-    const { text } = await callAI({
-      system: `Basert på dette intervjuet, bygg en strukturert arbeidsflyt som en JSON-liste av steg. Hvert steg: {"label": kort fase-navn (f.eks. "Input", "Søk", "Analyse", "Vurdering", "Output"), "title": konkret beskrivelse, "time": tidsestimat, "frequency": hvor ofte, "tools": verktøy/systemer brukt, "painPoints": kort om hva som er vanskelig}. 4-7 steg, i rekkefølge. Svar KUN med gyldig JSON, en liste, ingen forklaring, på norsk.`,
-      messages: state.interviewMessages.map((m) => ({ role: m.role, content: m.content })),
-      maxTokens: 1200,
-    });
-    const parsed = extractJSON(text);
-    state.workflowMap = Array.isArray(parsed) ? parsed : [];
+  renderCopyPasteBlock(ws, interviewPrompt(), (pasted) => {
+    const parsed = extractJSON(pasted);
+    if (!Array.isArray(parsed)) return false;
+    state.workflowMap = parsed;
     state.workflowSub = "map";
     saveState();
     render();
-  } catch (e) {
-    ws.innerHTML = `<p class="gate-error">${escapeHTML(e.message)}</p><button class="btn-ghost" onclick="buildWorkflowMap()">Prøv igjen</button>`;
-  }
+    return true;
+  }, { pasteLabel: t("pasteJsonLabel"), continueLabel: t("buildMapBtn") });
+
+  ws.appendChild(el(`<div class="btn-row"><button type="button" id="back-to-list" class="btn-ghost">${t("backBtn")}</button></div>`));
+  document.getElementById("back-to-list").addEventListener("click", () => { state.workflowSub = "list"; saveState(); render(); });
 }
 
 function renderWorkflowMap(ws) {
   ws.appendChild(el(`
     <div>
-      <p class="ws-kicker">Fase 2 / 8 · Arbeidsflyt-kart</p>
-      <h1 class="ws-h1">Slik ser arbeidsflyten ut</h1>
-      <p class="ws-lead">Sjekk at dette stemmer før dere går videre til å lete etter muligheter.</p>
+      <p class="ws-kicker">${t("phaseLabel")} 2 / 8 · ${t("mapKicker")}</p>
+      <h1 class="ws-h1">${t("mapH1")}</h1>
+      <p class="ws-lead">${t("mapLead")}</p>
     </div>
   `));
   const flow = el(`<div class="node-flow"></div>`);
   (state.workflowMap || []).forEach((node, i) => {
     flow.appendChild(el(`
       <div class="node-box">
-        <div class="node-label">${escapeHTML(node.label || "Steg " + (i + 1))}</div>
+        <div class="node-label">${escapeHTML(node.label || "")}</div>
         <div class="node-title">${escapeHTML(node.title || "")}</div>
         <div class="node-meta">${escapeHTML(node.time || "")}${node.frequency ? " · " + escapeHTML(node.frequency) : ""}${node.tools ? " · " + escapeHTML(node.tools) : ""}</div>
-        ${node.painPoints ? `<div class="node-meta" style="margin-top:6px;color:#b45; ">⚠ ${escapeHTML(node.painPoints)}</div>` : ""}
+        ${node.painPoints ? `<div class="node-meta" style="margin-top:6px;color:#b45;">⚠ ${escapeHTML(node.painPoints)}</div>` : ""}
       </div>
     `));
     if (i < state.workflowMap.length - 1) flow.appendChild(el(`<div class="node-arrow">↓</div>`));
   });
   ws.appendChild(flow);
   ws.appendChild(el(`<div class="btn-row">
-    <button id="redo-interview" class="btn-ghost">Tilbake til intervjuet</button>
-    <button id="to-opportunities" class="btn-primary">Finn AI-muligheter →</button>
+    <button type="button" id="redo-interview" class="btn-ghost">${t("redoBtn")}</button>
+    <button type="button" id="to-opportunities" class="btn-primary">${t("findOppBtn")}</button>
   </div>`));
   document.getElementById("redo-interview").addEventListener("click", () => { state.workflowSub = "interview"; saveState(); render(); });
   document.getElementById("to-opportunities").addEventListener("click", () => nextPhase());
@@ -475,19 +383,44 @@ function renderWorkflowMap(ws) {
 // Phase 2 — Opportunities
 // ============================================================
 
+function opportunitiesPrompt() {
+  const workflowJson = JSON.stringify(state.workflowMap);
+  if (state.lang === "en") {
+    return `Based on this workflow, generate 6–9 possible improvements. Do NOT assume AI is always the right answer: consider three categories — AI, Automation/regular software, and Process improvement.
+
+For each, output an object: {"id": "short unique string", "cluster": "theme group e.g. Information search / Reporting / Analysis", "opportunityType": "AI"|"Automation"|"Process", "title": "short title", "problem": "problem description", "whyHelp": "why this might help", "alternative": "a concrete non-AI alternative", "challenge": "a critical counter-check — why this might NOT work, hidden assumptions, what would need verifying, and whether AI is actually necessary"}.
+
+Role: ${state.context.role}. Workflow: ${workflowJson}
+
+Reply with ONLY a valid JSON array, nothing else.`;
+  }
+  return `Basert på denne arbeidsflyten, generer 6–9 mulige forbedringer. IKKE anta at AI alltid er riktig løsning: vurder tre kategorier — AI, Automatisering/vanlig programvare, og Prosessforbedring.
+
+For hver, gi et objekt: {"id": "kort unik streng", "cluster": "tema-gruppe f.eks. Informasjonssøk / Rapportering / Analyse", "opportunityType": "AI"|"Automation"|"Process", "title": "kort tittel", "problem": "problembeskrivelse", "whyHelp": "hvorfor dette kan hjelpe", "alternative": "et konkret ikke-AI-alternativ", "challenge": "en kritisk motsjekk — hvorfor dette KANSKJE ikke fungerer, skjulte antagelser, hva som må verifiseres, og om AI faktisk er nødvendig"}.
+
+Rolle: ${state.context.role}. Arbeidsflyt: ${workflowJson}
+
+Svar KUN med en gyldig JSON-liste, ingenting annet, på norsk.`;
+}
+
 function renderOpportunities(ws) {
   ws.appendChild(el(`
     <div>
-      <p class="ws-kicker">Fase 3 / 8 · AI Opportunity Discovery</p>
-      <h1 class="ws-h1">Hvor kan denne arbeidsflyten forbedres?</h1>
-      <p class="ws-lead">AI-en vurderer tre typer løsning for hvert steg: AI, automatisering/vanlig programvare, og prosessforbedring. Den skal ikke anta at AI automatisk er svaret.</p>
+      <p class="ws-kicker">${t("phaseLabel")} 3 / 8 · ${t("oppKicker")}</p>
+      <h1 class="ws-h1">${t("oppH1")}</h1>
+      <p class="ws-lead">${t("oppLead")}</p>
     </div>
   `));
 
   if (state.opportunities.length === 0) {
-    const btn = el(`<button id="gen-opp" class="btn-primary">GENERATE OPPORTUNITIES →</button>`);
-    ws.appendChild(btn);
-    btn.addEventListener("click", generateOpportunities);
+    renderCopyPasteBlock(ws, opportunitiesPrompt(), (pasted) => {
+      const parsed = extractJSON(pasted);
+      if (!Array.isArray(parsed)) return false;
+      state.opportunities = parsed;
+      saveState();
+      render();
+      return true;
+    });
     return;
   }
 
@@ -498,12 +431,12 @@ function renderOpportunities(ws) {
         <span class="opp-cluster">${escapeHTML(o.cluster || "")}</span>
         <span class="badge b-${(o.opportunityType || "ai").toLowerCase()}">${escapeHTML(o.opportunityType || "AI")}</span>
         <h4>${escapeHTML(o.title)}</h4>
-        <p><strong>Problem:</strong> ${escapeHTML(o.problem)}</p>
-        <p><strong>Hvorfor:</strong> ${escapeHTML(o.whyHelp)}</p>
-        <p><strong>Alternativ:</strong> ${escapeHTML(o.alternative)}</p>
-        ${o.challenge ? `<div class="ws-callout"><span class="cl-label">Kritisk motsjekk</span><p>${escapeHTML(o.challenge)}</p></div>` : ""}
+        <p><strong>${t("lblProblem")}:</strong> ${escapeHTML(o.problem)}</p>
+        <p><strong>${t("lblWhy")}:</strong> ${escapeHTML(o.whyHelp)}</p>
+        <p><strong>${t("lblAlternative")}:</strong> ${escapeHTML(o.alternative)}</p>
+        ${o.challenge ? `<div class="ws-callout"><span class="cl-label">${t("lblChallenge")}</span><p>${escapeHTML(o.challenge)}</p></div>` : ""}
         <label style="display:flex; gap:8px; align-items:center; font-size:13px; margin-top:10px;">
-          <input type="radio" name="opp-select" value="${o.id}" ${state.selectedOpportunityId === o.id ? "checked" : ""}> Velg denne til prioritering
+          <input type="radio" name="opp-select" value="${o.id}" ${state.selectedOpportunityId === o.id ? "checked" : ""}> ${t("selectForPriority")}
         </label>
       </div>
     `);
@@ -515,67 +448,47 @@ function renderOpportunities(ws) {
   });
 
   ws.appendChild(el(`<div class="btn-row">
-    <button id="regen-opp" class="btn-ghost">Generer flere</button>
-    <button id="to-prioritize" class="btn-primary">TIL PRIORITERING →</button>
+    <button type="button" id="regen-opp" class="btn-ghost">${t("regenBtn")}</button>
+    <button type="button" id="to-prioritize" class="btn-primary">${t("toPrioritizeBtn")}</button>
   </div>`));
-  document.getElementById("regen-opp").addEventListener("click", generateOpportunities);
+  document.getElementById("regen-opp").addEventListener("click", () => { state.opportunities = []; saveState(); render(); });
   document.getElementById("to-prioritize").addEventListener("click", () => nextPhase());
-}
-
-async function generateOpportunities() {
-  const ws = document.getElementById("workspace");
-  ws.innerHTML = `<p class="chat-thinking">Genererer og kritisk-vurderer muligheter...</p>`;
-  try {
-    const { text } = await callAI({
-      system: `Basert på arbeidsflyten under, generer 6-9 mulige forbedringer. IKKE anta at AI alltid er riktig løsning: vurder AI, Automation/vanlig programvare, og Process improvement.
-For hver: {"id": kort unik streng, "cluster": tema-gruppe (f.eks. "Informasjonssøk", "Rapportering", "Analyse"), "opportunityType": "AI"|"Automation"|"Process", "title": kort tittel, "problem": problembeskrivelse, "whyHelp": hvorfor denne løsningen kan hjelpe, "alternative": et konkret ikke-AI-alternativ, "challenge": en kritisk motsjekk — hvorfor dette KANSKJE ikke fungerer, skjulte antagelser, hva som må verifiseres, og om AI faktisk er nødvendig.
-Svar KUN med en gyldig JSON-liste, på norsk.`,
-      messages: [{ role: "user", content: `Rolle: ${state.context.role}. Arbeidsflyt: ${JSON.stringify(state.workflowMap)}` }],
-      maxTokens: 3000,
-    });
-    const parsed = extractJSON(text);
-    state.opportunities = Array.isArray(parsed) ? parsed : [];
-    saveState();
-    render();
-  } catch (e) {
-    ws.innerHTML = `<p class="gate-error">${escapeHTML(e.message)}</p><button class="btn-ghost" onclick="generateOpportunities()">Prøv igjen</button>`;
-  }
 }
 
 // ============================================================
 // Phase 3 — Prioritize
 // ============================================================
 
-const SCORE_DIMS = [
-  ["impact", "Impact"], ["frequency", "Frequency"], ["timeSaved", "Time saved"],
-  ["feasibility", "Feasibility"], ["data", "Data readiness"], ["risk", "Risk"], ["timeToValue", "Time to value"],
-];
+function scoreDims() {
+  return state.lang === "en"
+    ? [["impact", "Impact"], ["frequency", "Frequency"], ["timeSaved", "Time saved"], ["feasibility", "Feasibility"], ["data", "Data readiness"], ["risk", "Risk"], ["timeToValue", "Time to value"]]
+    : [["impact", "Impact"], ["frequency", "Frekvens"], ["timeSaved", "Tidsbesparelse"], ["feasibility", "Gjennomførbarhet"], ["data", "Dataklarhet"], ["risk", "Risiko"], ["timeToValue", "Tid til verdi"]];
+}
 
 function renderPrioritize(ws) {
   ws.appendChild(el(`
     <div>
-      <p class="ws-kicker">Fase 4 / 8 · Prioritering</p>
-      <h1 class="ws-h1">Velg det beste problemet, ikke bare den kuleste ideen</h1>
-      <p class="ws-lead">Score hver mulighet 0–5 på hver dimensjon. Totalscoren er et hjelpemiddel, ikke en fasit — dere kan overstyre den.</p>
+      <p class="ws-kicker">${t("phaseLabel")} 4 / 8 · ${t("prioKicker")}</p>
+      <h1 class="ws-h1">${t("prioH1")}</h1>
+      <p class="ws-lead">${t("prioLead")}</p>
     </div>
   `));
 
   if (state.opportunities.length === 0) {
-    ws.appendChild(el(`<p>Ingen muligheter generert ennå. Gå tilbake til forrige fase.</p>`));
+    ws.appendChild(el(`<p>${t("noOpportunitiesYet")}</p>`));
     return;
   }
 
-  const table = el(`<table class="scorecard"><thead><tr><th>Use case</th>${SCORE_DIMS.map(([, l]) => `<th>${l}</th>`).join("")}<th>Score</th></tr></thead><tbody></tbody></table>`);
+  const dims = scoreDims();
+  const table = el(`<table class="scorecard"><thead><tr><th>${t("useCase")}</th>${dims.map(([, l]) => `<th>${l}</th>`).join("")}<th>${t("score")}</th></tr></thead><tbody></tbody></table>`);
   const tbody = table.querySelector("tbody");
   state.opportunities.forEach((o) => {
     o.scores = o.scores || {};
     const row = el(`<tr><td>${escapeHTML(o.title)}</td></tr>`);
-    SCORE_DIMS.forEach(([key]) => {
-      const cell = el(`<td><input type="number" min="0" max="5" data-opp="${o.id}" data-dim="${key}" value="${o.scores[key] ?? ""}"></td>`);
-      row.appendChild(cell);
+    dims.forEach(([key]) => {
+      row.appendChild(el(`<td><input type="number" min="0" max="5" data-opp="${o.id}" data-dim="${key}" value="${o.scores[key] ?? ""}"></td>`));
     });
-    const scoreCell = el(`<td class="sc-score" id="score-${o.id}">${computeScore(o)}</td>`);
-    row.appendChild(scoreCell);
+    row.appendChild(el(`<td class="sc-score" id="score-${o.id}">${computeScore(o)}</td>`));
     tbody.appendChild(row);
   });
   ws.appendChild(table);
@@ -595,9 +508,9 @@ function renderPrioritize(ws) {
 
   const selectField = el(`
     <div class="field">
-      <label>Valgt use case for deep dive</label>
+      <label>${t("pickUseCase")}</label>
       <select id="pick-opp">
-        <option value="">— velg —</option>
+        <option value="">${t("pickPlaceholder")}</option>
         ${state.opportunities.map((o) => `<option value="${o.id}" ${state.selectedOpportunityId === o.id ? "selected" : ""}>${escapeHTML(o.title)}</option>`).join("")}
       </select>
     </div>
@@ -605,17 +518,16 @@ function renderPrioritize(ws) {
   ws.appendChild(selectField);
   selectField.querySelector("select").addEventListener("change", (e) => { state.selectedOpportunityId = e.target.value; saveState(); });
 
-  ws.appendChild(el(`<div class="btn-row"><button id="to-deepdive" class="btn-primary">DEEP DIVE PÅ VALGT USE CASE →</button></div>`));
+  ws.appendChild(el(`<div class="btn-row"><button type="button" id="to-deepdive" class="btn-primary">${t("toDeepDiveBtn")}</button></div>`));
   document.getElementById("to-deepdive").addEventListener("click", () => {
-    if (!state.selectedOpportunityId) { alert("Velg en use case først."); return; }
+    if (!state.selectedOpportunityId) { alert(t("pickOneFirst")); return; }
     nextPhase();
   });
 }
 
 function computeScore(o) {
   const s = o.scores || {};
-  const vals = SCORE_DIMS.map(([k]) => s[k] || 0);
-  return vals.reduce((a, b) => a + b, 0);
+  return scoreDims().map(([k]) => s[k] || 0).reduce((a, b) => a + b, 0);
 }
 
 function renderMatrix() {
@@ -624,20 +536,19 @@ function renderMatrix() {
   wrap.innerHTML = "";
   const matrix = el(`
     <div class="matrix">
-      <span class="matrix-label top-left">Strategic</span>
-      <span class="matrix-label top-right">Quick wins</span>
-      <span class="matrix-label bottom-left">Low priority</span>
-      <span class="matrix-label bottom-right">Low-hanging fruit</span>
-      <span class="matrix-axis-y">Impact →</span>
-      <span class="matrix-axis-x">Feasibility →</span>
+      <span class="matrix-label top-left">${t("matrixStrategic")}</span>
+      <span class="matrix-label top-right">${t("matrixQuickWins")}</span>
+      <span class="matrix-label bottom-left">${t("matrixLowPriority")}</span>
+      <span class="matrix-label bottom-right">${t("matrixLowHanging")}</span>
+      <span class="matrix-axis-y">${t("matrixImpactAxis")}</span>
+      <span class="matrix-axis-x">${t("matrixFeasAxis")}</span>
     </div>
   `);
   state.opportunities.forEach((o) => {
     const s = o.scores || {};
-    const impact = ((s.impact || 0) + (s.timeSaved || 0)) / 2 / 5; // 0..1
+    const impact = ((s.impact || 0) + (s.timeSaved || 0)) / 2 / 5;
     const feas = ((s.feasibility || 0) + (s.data || 0)) / 2 / 5;
-    const dot = el(`<div class="matrix-dot" style="left:${feas * 100}%; bottom:${impact * 100}%;" title="${escapeHTML(o.title)}"></div>`);
-    matrix.appendChild(dot);
+    matrix.appendChild(el(`<div class="matrix-dot" style="left:${feas * 100}%; bottom:${impact * 100}%;" title="${escapeHTML(o.title)}"></div>`));
   });
   wrap.appendChild(matrix);
 }
@@ -646,31 +557,24 @@ function renderMatrix() {
 // Phase 4 — Deep Dive
 // ============================================================
 
-const DEEPDIVE_QUESTIONS = [
-  ["currentState", "How is this done today?"],
-  ["people", "Who is involved?"],
-  ["systems", "Which systems are involved?"],
-  ["data", "What information is required?"],
-  ["inputs", "What goes into the process?"],
-  ["outputs", "What should come out?"],
-  ["exceptions", "When does the normal process fail?"],
-  ["judgement", "Where is human judgement required?"],
-  ["risks", "What could go wrong?"],
-  ["success", "What would a much better process look like?"],
-];
+function deepDiveQuestions() {
+  return state.lang === "en"
+    ? [["currentState", "How is this done today?"], ["people", "Who is involved?"], ["systems", "Which systems are involved?"], ["data", "What information is required?"], ["inputs", "What goes into the process?"], ["outputs", "What should come out?"], ["exceptions", "When does the normal process fail?"], ["judgement", "Where is human judgement required?"], ["risks", "What could go wrong?"], ["success", "What would a much better process look like?"]]
+    : [["currentState", "Hvordan gjøres dette i dag?"], ["people", "Hvem er involvert?"], ["systems", "Hvilke systemer er involvert?"], ["data", "Hvilken informasjon kreves?"], ["inputs", "Hva går inn i prosessen?"], ["outputs", "Hva skal komme ut?"], ["exceptions", "Når feiler den normale prosessen?"], ["judgement", "Hvor kreves menneskelig skjønn?"], ["risks", "Hva kan gå galt?"], ["success", "Hvordan ser en mye bedre prosess ut?"]];
+}
 
 function renderDeepDive(ws) {
   const opp = state.opportunities.find((o) => o.id === state.selectedOpportunityId);
   ws.appendChild(el(`
     <div>
-      <p class="ws-kicker">Fase 5 / 8 · Deep Dive</p>
-      <h1 class="ws-h1">Nå undersøker dere: ${escapeHTML(opp ? opp.title : "")}</h1>
-      <p class="ws-lead">Forstå problemet ordentlig før dere designer løsningen. Fyll ut det dere vet — det som er ukjent er også nyttig informasjon.</p>
+      <p class="ws-kicker">${t("phaseLabel")} 5 / 8 · ${t("ddKicker")}</p>
+      <h1 class="ws-h1">${t("ddH1")} ${escapeHTML(opp ? opp.title : "")}</h1>
+      <p class="ws-lead">${t("ddLead")}</p>
     </div>
   `));
 
   const list = el(`<div class="qa-list"></div>`);
-  DEEPDIVE_QUESTIONS.forEach(([key, q]) => {
+  deepDiveQuestions().forEach(([key, q]) => {
     list.appendChild(el(`
       <div class="qa-item">
         <div class="qa-q">${q}</div>
@@ -679,11 +583,11 @@ function renderDeepDive(ws) {
     `));
   });
   ws.appendChild(list);
-  list.querySelectorAll("textarea").forEach((t) => {
-    t.addEventListener("input", () => { state.deepDiveAnswers[t.dataset.key] = t.value; saveState(); });
+  list.querySelectorAll("textarea").forEach((tx) => {
+    tx.addEventListener("input", () => { state.deepDiveAnswers[tx.dataset.key] = tx.value; saveState(); });
   });
 
-  ws.appendChild(el(`<div class="btn-row"><button id="to-solutions" class="btn-primary">UTFORSK LØSNINGER →</button></div>`));
+  ws.appendChild(el(`<div class="btn-row"><button type="button" id="to-solutions" class="btn-primary">${t("toSolutionsBtn")}</button></div>`));
   document.getElementById("to-solutions").addEventListener("click", () => nextPhase());
 }
 
@@ -691,19 +595,55 @@ function renderDeepDive(ws) {
 // Phase 5 — Solutions
 // ============================================================
 
+function solutionsPrompt() {
+  const opp = state.opportunities.find((o) => o.id === state.selectedOpportunityId);
+  if (state.lang === "en") {
+    return `Generate 3–4 solution options (label A, B, C, optionally D) for the problem below, including at least one traditional/non-AI option where relevant.
+
+For each: {"label":"A", "name": "short name", "architecture": "brief description of how it's built", "inputs":"", "processing":"", "output":"", "humanInLoop": "where humans must approve/check", "systems": "systems required", "data": "data required", "complexity":"low/medium/high", "risks":"", "effort": "rough estimate", "benefit": "expected benefit"}.
+
+Use case: ${opp ? opp.title + " — " + opp.problem : ""}. Deep dive notes: ${JSON.stringify(state.deepDiveAnswers)}
+
+Reply with ONLY a valid JSON array, nothing else.`;
+  }
+  return `Generer 3–4 løsningsalternativer (merk A, B, C, valgfritt D) for problemet under, inkludert minst ett tradisjonelt/ikke-AI-alternativ der relevant.
+
+For hver: {"label":"A", "name": "kort navn", "architecture": "kort beskrivelse av oppbygning", "inputs":"", "processing":"", "output":"", "humanInLoop": "hvor mennesker må godkjenne/sjekke", "systems": "nødvendige systemer", "data": "nødvendig data", "complexity":"lav/middels/høy", "risks":"", "effort": "grovt anslag", "benefit": "forventet gevinst"}.
+
+Use case: ${opp ? opp.title + " — " + opp.problem : ""}. Deep dive-notater: ${JSON.stringify(state.deepDiveAnswers)}
+
+Svar KUN med en gyldig JSON-liste, ingenting annet, på norsk.`;
+}
+
+function challengePrompt(sol) {
+  if (state.lang === "en") {
+    return `Assume the proposed solution below is wrong. Try to disprove it. Identify hidden assumptions, technical limitations, data problems, security concerns, workflow issues, adoption barriers, and situations where the solution would fail. Suggest better alternatives if relevant. Keep it under 120 words, concrete. Don't fabricate domain expertise you don't have — say explicitly where domain experts must validate technical details.
+
+Solution: ${JSON.stringify(sol)}`;
+  }
+  return `Anta at den foreslåtte løsningen under er feil. Prøv å motbevise den. Identifiser skjulte antagelser, tekniske begrensninger, dataproblemer, sikkerhetsbekymringer, arbeidsflyt-problemer, adopsjonsbarrierer, og situasjoner hvor løsningen ville feilet. Foreslå bedre alternativer hvis relevant. Maks 120 ord, konkret. Ikke fabrikker fagkompetanse du ikke har — si eksplisitt hvor fagfolk må validere tekniske detaljer.
+
+Løsning: ${JSON.stringify(sol)}`;
+}
+
 function renderSolutions(ws) {
   ws.appendChild(el(`
     <div>
-      <p class="ws-kicker">Fase 6 / 8 · Solution Exploration</p>
-      <h1 class="ws-h1">Ikke bli forelsket i den første løsningen</h1>
-      <p class="ws-lead">AI-en genererer flere løsningsalternativer. Bruk "Challenge this solution" på favoritten før dere velger.</p>
+      <p class="ws-kicker">${t("phaseLabel")} 6 / 8 · ${t("solKicker")}</p>
+      <h1 class="ws-h1">${t("solH1")}</h1>
+      <p class="ws-lead">${t("solLead")}</p>
     </div>
   `));
 
   if (state.solutions.length === 0) {
-    const btn = el(`<button id="gen-sol" class="btn-primary">GENERATE SOLUTIONS →</button>`);
-    ws.appendChild(btn);
-    btn.addEventListener("click", generateSolutions);
+    renderCopyPasteBlock(ws, solutionsPrompt(), (pasted) => {
+      const parsed = extractJSON(pasted);
+      if (!Array.isArray(parsed)) return false;
+      state.solutions = parsed;
+      saveState();
+      render();
+      return true;
+    });
     return;
   }
 
@@ -711,110 +651,90 @@ function renderSolutions(ws) {
   state.solutions.forEach((s) => {
     const card = el(`
       <div class="opp-card">
-        <span class="opp-cluster">Løsning ${escapeHTML(s.label)}</span>
+        <span class="opp-cluster">${t("solutionLabel")} ${escapeHTML(s.label)}</span>
         <h4>${escapeHTML(s.name)}</h4>
-        <p><strong>Arkitektur:</strong> ${escapeHTML(s.architecture)}</p>
-        <p><strong>Human-in-the-loop:</strong> ${escapeHTML(s.humanInLoop)}</p>
-        <p><strong>Kompleksitet:</strong> ${escapeHTML(s.complexity)} · <strong>Innsats:</strong> ${escapeHTML(s.effort)}</p>
-        <p><strong>Forventet gevinst:</strong> ${escapeHTML(s.benefit)}</p>
-        ${s.challengeResult ? `<div class="ws-callout"><span class="cl-label">Kritisk utfordring</span><p>${escapeHTML(s.challengeResult)}</p></div>` : `<button class="btn-ghost challenge-btn" data-label="${s.label}">CHALLENGE THIS SOLUTION</button>`}
+        <p><strong>${t("lblArchitecture")}:</strong> ${escapeHTML(s.architecture)}</p>
+        <p><strong>${t("lblHumanInLoop")}:</strong> ${escapeHTML(s.humanInLoop)}</p>
+        <p><strong>${t("lblComplexity")}:</strong> ${escapeHTML(s.complexity)} · <strong>${t("lblEffort")}:</strong> ${escapeHTML(s.effort)}</p>
+        <p><strong>${t("lblBenefit")}:</strong> ${escapeHTML(s.benefit)}</p>
+        ${s.challengeResult ? `<div class="ws-callout"><span class="cl-label">${t("lblChallengeResult")}</span><p>${escapeHTML(s.challengeResult)}</p></div>` : ""}
+        <div class="challenge-slot"></div>
         <label style="display:flex; gap:8px; align-items:center; font-size:13px; margin-top:10px;">
-          <input type="radio" name="sol-select" value="${s.label}" ${state.selectedSolutionLabel === s.label ? "checked" : ""}> Velg denne
+          <input type="radio" name="sol-select" value="${s.label}" ${state.selectedSolutionLabel === s.label ? "checked" : ""}> ${t("selectThis")}
         </label>
       </div>
     `);
+    if (!s.challengeResult) {
+      const slot = card.querySelector(".challenge-slot");
+      const btn = el(`<button type="button" class="btn-ghost">${t("challengeBtn")}</button>`);
+      slot.appendChild(btn);
+      btn.addEventListener("click", () => {
+        slot.innerHTML = "";
+        renderCopyPasteBlock(slot, challengePrompt(s), (pasted) => {
+          s.challengeResult = pasted;
+          saveState();
+          render();
+          return true;
+        });
+      });
+    }
     grid.appendChild(card);
   });
   ws.appendChild(grid);
 
-  grid.querySelectorAll(".challenge-btn").forEach((btn) => {
-    btn.addEventListener("click", () => challengeSolution(btn.dataset.label));
-  });
   grid.querySelectorAll('input[name="sol-select"]').forEach((r) => {
     r.addEventListener("change", (e) => { state.selectedSolutionLabel = e.target.value; saveState(); });
   });
 
-  ws.appendChild(el(`<div class="btn-row"><button id="to-pilot" class="btn-primary">DESIGN PILOTEN →</button></div>`));
+  ws.appendChild(el(`<div class="btn-row"><button type="button" id="to-pilot" class="btn-primary">${t("toPilotBtn")}</button></div>`));
   document.getElementById("to-pilot").addEventListener("click", () => {
-    if (!state.selectedSolutionLabel) { alert("Velg en løsning først."); return; }
+    if (!state.selectedSolutionLabel) { alert(t("pickSolutionFirst")); return; }
     nextPhase();
   });
-}
-
-async function generateSolutions() {
-  const ws = document.getElementById("workspace");
-  ws.innerHTML = `<p class="chat-thinking">Genererer løsningsalternativer...</p>`;
-  const opp = state.opportunities.find((o) => o.id === state.selectedOpportunityId);
-  try {
-    const { text } = await callAI({
-      system: `Generer 3-4 løsningsalternativer (merk A, B, C, valgfritt D) for problemet under, inkludert minst ett tradisjonelt/ikke-AI-alternativ hvis relevant.
-For hver: {"label":"A", "name": kort navn, "architecture": kort beskrivelse av oppbygning, "inputs":"", "processing":"", "output":"", "humanInLoop": hvor mennesker må godkjenne/sjekke, "systems": nødvendige systemer, "data": nødvendig data, "complexity":"lav/middels/høy", "risks":"", "effort": grovt anslag, "benefit": forventet gevinst.
-Svar KUN med en gyldig JSON-liste, på norsk.`,
-      messages: [{ role: "user", content: `Use case: ${opp ? opp.title + " — " + opp.problem : ""}. Deep dive: ${JSON.stringify(state.deepDiveAnswers)}` }],
-      maxTokens: 2500,
-    });
-    const parsed = extractJSON(text);
-    state.solutions = Array.isArray(parsed) ? parsed : [];
-    saveState();
-    render();
-  } catch (e) {
-    ws.innerHTML = `<p class="gate-error">${escapeHTML(e.message)}</p><button class="btn-ghost" onclick="generateSolutions()">Prøv igjen</button>`;
-  }
-}
-
-async function challengeSolution(label) {
-  const sol = state.solutions.find((s) => s.label === label);
-  if (!sol) return;
-  const ws = document.getElementById("workspace");
-  const prior = ws.innerHTML;
-  ws.innerHTML = `<p class="chat-thinking">Utfordrer løsning ${label}...</p>`;
-  try {
-    const { text } = await callAI({
-      system: `Anta at den foreslåtte løsningen er feil. Prøv å motbevise den. Identifiser skjulte antagelser, tekniske begrensninger, dataproblemer, sikkerhetsbekymringer, arbeidsflyt-problemer, adopsjonsbarrierer, og situasjoner hvor løsningen ville feilet. Foreslå bedre alternativer hvis relevant. Svar kort (maks 120 ord), konkret, på norsk. Ikke fabrikker fagkompetanse du ikke har — si eksplisitt at fagfolk må validere tekniske detaljer der det er relevant.`,
-      messages: [{ role: "user", content: `Løsning: ${JSON.stringify(sol)}` }],
-      maxTokens: 500,
-    });
-    sol.challengeResult = text.trim();
-    saveState();
-    render();
-  } catch (e) {
-    ws.innerHTML = prior;
-    alert(e.message);
-  }
 }
 
 // ============================================================
 // Phase 6 — Pilot design
 // ============================================================
 
-const PILOT_FIELDS = [
-  ["problem", "Problem", "What exactly are we solving?"],
-  ["currentProcess", "Current process", "How does it work today?"],
-  ["proposedSolution", "Proposed solution", "What will we build/test?"],
-  ["users", "Users", "Who will use it?"],
-  ["inputs", "Inputs", "What information does it need?"],
-  ["outputs", "Outputs", "What should it produce?"],
-  ["humanControl", "Human control", "Where must humans approve/check?"],
-  ["systems", "Systems", "What systems does it need to interact with?"],
-  ["data", "Data", "What data is needed?"],
-  ["security", "Security", "What information must be protected?"],
-  ["successMetric", "Success metric", "How will we know the pilot works?"],
-  ["scope", "Pilot scope", "What is deliberately NOT included?"],
-];
+function pilotFields() {
+  return state.lang === "en"
+    ? [["problem", "Problem", "What exactly are we solving?"], ["currentProcess", "Current process", "How does it work today?"], ["proposedSolution", "Proposed solution", "What will we build/test?"], ["users", "Users", "Who will use it?"], ["inputs", "Inputs", "What information does it need?"], ["outputs", "Outputs", "What should it produce?"], ["humanControl", "Human control", "Where must humans approve/check?"], ["systems", "Systems", "What systems does it need to interact with?"], ["data", "Data", "What data is needed?"], ["security", "Security", "What information must be protected?"], ["successMetric", "Success metric", "How will we know the pilot works?"], ["scope", "Pilot scope", "What is deliberately NOT included?"]]
+    : [["problem", "Problem", "Hva løser vi egentlig?"], ["currentProcess", "Nåværende prosess", "Hvordan fungerer det i dag?"], ["proposedSolution", "Foreslått løsning", "Hva skal vi bygge/teste?"], ["users", "Brukere", "Hvem skal bruke det?"], ["inputs", "Input", "Hvilken informasjon trenger den?"], ["outputs", "Output", "Hva skal den produsere?"], ["humanControl", "Menneskelig kontroll", "Hvor må mennesker godkjenne/sjekke?"], ["systems", "Systemer", "Hvilke systemer må den snakke med?"], ["data", "Data", "Hvilke data trengs?"], ["security", "Sikkerhet", "Hvilken informasjon må beskyttes?"], ["successMetric", "Suksesskriterium", "Hvordan vet vi at piloten fungerer?"], ["scope", "Pilotomfang", "Hva er bevisst IKKE inkludert?"]];
+}
+
+function pilotDraftPrompt() {
+  const opp = state.opportunities.find((o) => o.id === state.selectedOpportunityId);
+  const sol = state.solutions.find((s) => s.label === state.selectedSolutionLabel);
+  if (state.lang === "en") {
+    return `Draft a pilot design as a JSON object with the keys: problem, currentProcess, proposedSolution, users, inputs, outputs, humanControl, systems, data, security, successMetric, scope. Base it on the information below. Be concrete and brief per field (1–3 sentences).
+
+Use case: ${JSON.stringify(opp)}. Deep dive: ${JSON.stringify(state.deepDiveAnswers)}. Chosen solution: ${JSON.stringify(sol)}.
+
+Reply with ONLY valid JSON, nothing else.`;
+  }
+  return `Lag et utkast til pilotdesign som et JSON-objekt med nøklene: problem, currentProcess, proposedSolution, users, inputs, outputs, humanControl, systems, data, security, successMetric, scope. Basér deg på informasjonen under. Vær konkret og kort per felt (1–3 setninger).
+
+Use case: ${JSON.stringify(opp)}. Deep dive: ${JSON.stringify(state.deepDiveAnswers)}. Valgt løsning: ${JSON.stringify(sol)}.
+
+Svar KUN med gyldig JSON, ingenting annet, på norsk.`;
+}
 
 function renderPilot(ws) {
   ws.appendChild(el(`
     <div>
-      <p class="ws-kicker">Fase 7 / 8 · Pilot Design</p>
-      <h1 class="ws-h1">Gjør ideen om til en pilot</h1>
-      <p class="ws-lead">Fyll ut selv, eller la AI-en foreslå et førsteutkast basert på alt dere har gjort så langt.</p>
+      <p class="ws-kicker">${t("phaseLabel")} 7 / 8 · ${t("pilotKicker")}</p>
+      <h1 class="ws-h1">${t("pilotH1")}</h1>
+      <p class="ws-lead">${t("pilotLead")}</p>
     </div>
   `));
 
-  ws.appendChild(el(`<button id="draft-pilot" class="btn-ghost" style="margin-bottom:20px;">La AI foreslå et utkast →</button>`));
+  ws.appendChild(el(`<button type="button" id="draft-pilot" class="btn-ghost" style="margin-bottom:20px;">${t("draftBtn")}</button>`));
+  const draftSlot = el(`<div id="draft-slot"></div>`);
+  ws.appendChild(draftSlot);
 
   const list = el(`<div class="qa-list"></div>`);
-  PILOT_FIELDS.forEach(([key, label, hint]) => {
+  pilotFields().forEach(([key, label, hint]) => {
     list.appendChild(el(`
       <div class="qa-item">
         <div class="qa-q">${label}</div>
@@ -824,55 +744,60 @@ function renderPilot(ws) {
     `));
   });
   ws.appendChild(list);
-  list.querySelectorAll("textarea").forEach((t) => {
-    t.addEventListener("input", () => { state.pilot[t.dataset.key] = t.value; saveState(); });
+  list.querySelectorAll("textarea").forEach((tx) => {
+    tx.addEventListener("input", () => { state.pilot[tx.dataset.key] = tx.value; saveState(); });
   });
 
-  ws.appendChild(el(`<div class="btn-row"><button id="to-brief" class="btn-primary">GENERER PILOT BRIEF →</button></div>`));
-  document.getElementById("draft-pilot").addEventListener("click", draftPilot);
-  document.getElementById("to-brief").addEventListener("click", () => nextPhase());
-}
+  ws.appendChild(el(`<div class="btn-row"><button type="button" id="to-brief" class="btn-primary">${t("toBriefBtn")}</button></div>`));
 
-async function draftPilot() {
-  const ws = document.getElementById("workspace");
-  const opp = state.opportunities.find((o) => o.id === state.selectedOpportunityId);
-  const sol = state.solutions.find((s) => s.label === state.selectedSolutionLabel);
-  const btn = document.getElementById("draft-pilot");
-  btn.textContent = "Skriver utkast...";
-  btn.disabled = true;
-  try {
-    const { text } = await callAI({
-      system: `Fyll ut et pilotdesign som JSON med nøklene: problem, currentProcess, proposedSolution, users, inputs, outputs, humanControl, systems, data, security, successMetric, scope. Basér deg på informasjonen under. Vær konkret og kort per felt (1-3 setninger). Svar KUN med gyldig JSON, på norsk.`,
-      messages: [{ role: "user", content: `Use case: ${JSON.stringify(opp)}. Deep dive: ${JSON.stringify(state.deepDiveAnswers)}. Valgt løsning: ${JSON.stringify(sol)}.` }],
-      maxTokens: 1500,
+  document.getElementById("draft-pilot").addEventListener("click", () => {
+    draftSlot.innerHTML = "";
+    renderCopyPasteBlock(draftSlot, pilotDraftPrompt(), (pasted) => {
+      const parsed = extractJSON(pasted);
+      if (!parsed) return false;
+      state.pilot = Object.assign({}, state.pilot, parsed);
+      saveState();
+      render();
+      return true;
     });
-    const parsed = extractJSON(text) || {};
-    state.pilot = Object.assign({}, state.pilot, parsed);
-    saveState();
-    render();
-  } catch (e) {
-    alert(e.message);
-    btn.textContent = "La AI foreslå et utkast →";
-    btn.disabled = false;
-  }
+  });
+  document.getElementById("to-brief").addEventListener("click", () => nextPhase());
 }
 
 // ============================================================
 // Phase 7 — Final brief
 // ============================================================
 
+function briefPrompt() {
+  const opp = state.opportunities.find((o) => o.id === state.selectedOpportunityId);
+  const sol = state.solutions.find((s) => s.label === state.selectedSolutionLabel);
+  if (state.lang === "en") {
+    return `Write a professional "AI Pilot Brief" in Markdown, with exactly these sections as ## headings: Company, Department, Role, 1. Problem, 2. Current workflow, 3. Identified opportunity, 4. Why it matters, 5. Proposed solution, 6. Alternative solutions considered, 7. Data required, 8. Systems involved, 9. Human involvement, 10. Risks/unknowns, 11. Pilot scope, 12. Success criteria, 13. Estimated effort, 14. Recommended next step, 15. Pilot owner.
+It should read like a consulting document, not an AI-generated report: concrete, brief per section, no filler.
+
+Context: ${JSON.stringify(state.context)}. Chosen use case: ${JSON.stringify(opp)}. Deep dive: ${JSON.stringify(state.deepDiveAnswers)}. Chosen solution: ${JSON.stringify(sol)}. Pilot design: ${JSON.stringify(state.pilot)}.`;
+  }
+  return `Skriv en profesjonell "AI Pilot Brief" i Markdown, på norsk, med nøyaktig disse seksjonene som ## overskrifter: Selskap, Avdeling, Rolle, 1. Problem, 2. Nåværende arbeidsflyt, 3. Identifisert mulighet, 4. Hvorfor det er viktig, 5. Foreslått løsning, 6. Alternative løsninger vurdert, 7. Nødvendig data, 8. Involverte systemer, 9. Menneskelig involvering, 10. Risiko/ukjente faktorer, 11. Pilotomfang, 12. Suksesskriterier, 13. Estimert innsats, 14. Anbefalt neste steg, 15. Pilot-eier.
+Skal lese som et konsulentdokument, ikke en AI-generert rapport: konkret, kort per seksjon, ingen fyllord.
+
+Kontekst: ${JSON.stringify(state.context)}. Valgt use case: ${JSON.stringify(opp)}. Deep dive: ${JSON.stringify(state.deepDiveAnswers)}. Valgt løsning: ${JSON.stringify(sol)}. Pilotdesign: ${JSON.stringify(state.pilot)}.`;
+}
+
 function renderBrief(ws) {
   ws.appendChild(el(`
     <div>
-      <p class="ws-kicker">Fase 8 / 8 · Pilot Brief</p>
-      <h1 class="ws-h1">Dette er det dere går ut av rommet med</h1>
+      <p class="ws-kicker">${t("phaseLabel")} 8 / 8 · ${t("briefKicker")}</p>
+      <h1 class="ws-h1">${t("briefH1")}</h1>
     </div>
   `));
 
   if (!state.briefText) {
-    const btn = el(`<button id="gen-brief" class="btn-primary">GENERATE PILOT BRIEF →</button>`);
-    ws.appendChild(btn);
-    btn.addEventListener("click", generateBrief);
+    renderCopyPasteBlock(ws, briefPrompt(), (pasted) => {
+      state.briefText = pasted;
+      saveState();
+      render();
+      return true;
+    }, { pasteLabel: t("pasteBriefLabel"), continueLabel: t("showBriefBtn") });
     return;
   }
 
@@ -881,15 +806,15 @@ function renderBrief(ws) {
   ws.appendChild(doc);
 
   ws.appendChild(el(`<div class="btn-row">
-    <button id="regen-brief" class="btn-ghost">Generer på nytt</button>
-    <button id="copy-brief" class="btn-ghost">Kopier til utklippstavle</button>
-    <button id="md-brief" class="btn-ghost">Last ned som Markdown</button>
-    <button id="pdf-brief" class="btn-primary">Skriv ut / lagre som PDF</button>
+    <button type="button" id="regen-brief" class="btn-ghost">${t("regenBriefBtn")}</button>
+    <button type="button" id="copy-brief" class="btn-ghost">${t("copyBriefBtn")}</button>
+    <button type="button" id="md-brief" class="btn-ghost">${t("mdBriefBtn")}</button>
+    <button type="button" id="pdf-brief" class="btn-primary">${t("pdfBriefBtn")}</button>
   </div>`));
 
-  document.getElementById("regen-brief").addEventListener("click", generateBrief);
+  document.getElementById("regen-brief").addEventListener("click", () => { state.briefText = ""; saveState(); render(); });
   document.getElementById("copy-brief").addEventListener("click", () => {
-    navigator.clipboard.writeText(state.briefText).then(() => alert("Kopiert."));
+    navigator.clipboard.writeText(state.briefText).then(() => alert(t("copiedAlert")));
   });
   document.getElementById("md-brief").addEventListener("click", () => {
     const blob = new Blob([state.briefText], { type: "text/markdown" });
@@ -906,16 +831,16 @@ function renderBrief(ws) {
 
   const cta = el(`
     <div>
-      <h2 style="margin-top:48px;">Dere har identifisert en mulighet. Nå må dere teste om den faktisk fungerer.</h2>
+      <h2 style="margin-top:48px;">${t("ctaHeading")}</h2>
       <div class="cta-options">
         <div class="cta-option">
-          <h4>Explore internally</h4>
-          <p>Ta med pilotbrief-en og diskuter den internt før dere bestemmer neste steg. Se også <a href="../ai-tips-for-ingeniorer/" target="_blank" rel="noopener">AI-verktøykassen for ingeniører</a> for konkrete Skills og verktøy dere kan ta i bruk med det samme.</p>
+          <h4>${t("ctaInternalTitle")}</h4>
+          <p>${t("ctaInternalBody")} <a href="${state.lang === "en" ? "../ai-tips-for-engineers/" : "../ai-tips-for-ingeniorer/"}" target="_blank" rel="noopener">${t("ctaInternalLink")}</a></p>
         </div>
         <div class="cta-option highlight">
-          <h4>Build a pilot with YCP</h4>
-          <p>Vi hjelper dere å gjøre det valgte use-caset om til en fungerende prototype.</p>
-          <a href="mailto:kontakt@ycpconsulting.no" class="btn-primary" style="text-decoration:none;">DISCUSS THE PILOT →</a>
+          <h4>${t("ctaYcpTitle")}</h4>
+          <p>${t("ctaYcpBody")}</p>
+          <a href="mailto:kontakt@ycpconsulting.no" class="btn-primary" style="text-decoration:none;">${t("ctaYcpBtn")}</a>
         </div>
       </div>
     </div>
@@ -923,27 +848,6 @@ function renderBrief(ws) {
   ws.appendChild(cta);
 }
 
-async function generateBrief() {
-  const ws = document.getElementById("workspace");
-  ws.innerHTML = `<p class="chat-thinking">Setter sammen pilot brief-en...</p>`;
-  const opp = state.opportunities.find((o) => o.id === state.selectedOpportunityId);
-  const sol = state.solutions.find((s) => s.label === state.selectedSolutionLabel);
-  try {
-    const { text } = await callAI({
-      system: `Skriv en profesjonell "AI Pilot Brief" i Markdown, på norsk, med nøyaktig disse seksjonene som ## overskrifter: Selskap, Avdeling, Rolle, 1. Problem, 2. Nåværende arbeidsflyt, 3. Identifisert mulighet, 4. Hvorfor det er viktig, 5. Foreslått løsning, 6. Alternative løsninger vurdert, 7. Nødvendig data, 8. Involverte systemer, 9. Menneskelig involvering, 10. Risiko/ukjente faktorer, 11. Pilotomfang, 12. Suksesskriterier, 13. Estimert innsats, 14. Anbefalt neste steg, 15. Pilot-eier.
-Skal lese som et konsulentdokument, ikke en AI-generert rapport: konkret, kort per seksjon, ingen fyllord.`,
-      messages: [{ role: "user", content: `Kontekst: ${JSON.stringify(state.context)}. Valgt use case: ${JSON.stringify(opp)}. Deep dive: ${JSON.stringify(state.deepDiveAnswers)}. Valgt løsning: ${JSON.stringify(sol)}. Pilotdesign: ${JSON.stringify(state.pilot)}.` }],
-      maxTokens: 3000,
-    });
-    state.briefText = text.trim();
-    saveState();
-    render();
-  } catch (e) {
-    ws.innerHTML = `<p class="gate-error">${escapeHTML(e.message)}</p><button class="btn-ghost" onclick="generateBrief()">Prøv igjen</button>`;
-  }
-}
-
-// Minimal markdown → HTML for the brief (## headings, paragraphs, - lists).
 function briefToHTML(md) {
   const lines = md.split("\n");
   let html = "";
@@ -951,12 +855,9 @@ function briefToHTML(md) {
   for (const raw of lines) {
     const line = raw.trim();
     if (!line) { if (inList) { html += "</ul>"; inList = false; } continue; }
-    if (line.startsWith("## ")) {
+    if (line.startsWith("## ") || line.startsWith("# ")) {
       if (inList) { html += "</ul>"; inList = false; }
-      html += `<h2>${escapeHTML(line.slice(3))}</h2>`;
-    } else if (line.startsWith("# ")) {
-      if (inList) { html += "</ul>"; inList = false; }
-      html += `<h2>${escapeHTML(line.slice(2))}</h2>`;
+      html += `<h2>${escapeHTML(line.replace(/^#+\s*/, ""))}</h2>`;
     } else if (/^[-*]\s+/.test(line)) {
       if (!inList) { html += "<ul>"; inList = true; }
       html += `<li>${escapeHTML(line.replace(/^[-*]\s+/, ""))}</li>`;
@@ -969,15 +870,159 @@ function briefToHTML(md) {
   return html;
 }
 
-// ---------- Mode toggle button ----------
+// ============================================================
+// Strings (NO / EN)
+// ============================================================
+
+const T = {
+  no: {
+    phase_context: "Context", phase_workflow: "Workflow", phase_opportunities: "Opportunities",
+    phase_prioritize: "Prioritize", phase_deepdive: "Deep Dive", phase_solutions: "Solutions",
+    phase_pilot: "Pilot", phase_brief: "Brief",
+    phaseLabel: "Fase",
+    contextLead: "Ikke en presentasjon om AI. Dere bruker AI til å analysere egen arbeidshverdag, finne muligheter, og designe én konkret pilot.",
+    fCompany: "Bedrift", fWebsite: "Nettside", fIndustry: "Bransje", fName: "Ditt navn",
+    fRole: "Din rolle (f.eks. Drilling Engineer, HR Advisor)", fDepartment: "Avdeling",
+    fPainPoints: "Hva er 2–3 ting du bruker mye tid på? (valgfritt)", fMode: "Kjøremodus",
+    modeFast: "Fast mode — 60 min", modeDeep: "Deep mode — 90 min",
+    modeFastShort: "Fast mode", modeDeepShort: "Deep mode",
+    researchBtn: "Research bedriften (valgfritt) →", startBtn: "START DISCOVERY →", research: "Research",
+    csStep1: "Kopier prompten under.", csStep2: "Lim den inn i din egen Claude-samtale (claude.ai).",
+    csStep3: "Lim svaret fra Claude inn i feltet under, og fortsett.",
+    copyPrompt: "Kopier prompten", copied: "✓ Kopiert", pasteLabel: "Lim inn svaret fra Claude",
+    pastePlaceholder: "Lim inn her...", continueBtn: "Fortsett →", pasteEmpty: "Lim inn svaret først.",
+    parseFailed: "Fikk ikke lest svaret som forventet format. Sjekk at du limte inn hele svaret, og prøv igjen.",
+    workflowKicker: "Workflow discovery", workflowH1: "Hva gjør du i løpet av en normal arbeidsuke?",
+    workflowLead: "Skriv ned 5–10 tilbakevendende oppgaver du gjør som",
+    workflowFieldLabel: "Én oppgave per linje",
+    workflowPlaceholder: "F.eks.\nPrepare drilling reports\nReview offset well data\nAnalyse drilling parameters",
+    interviewBtn: "LA CLAUDE INTERVJUE DEG →", needOneActivity: "Skriv ned minst én oppgave.",
+    interviewKicker: "AI-intervju", interviewH1: "Fortell om arbeidsflyten din",
+    interviewLead: "Ha hele intervjuet i din egen Claude-samtale. Når Claude gir deg en avsluttende JSON-oppsummering, lim den inn under.",
+    pasteJsonLabel: "Lim inn JSON-arbeidsflyten fra Claude", buildMapBtn: "Bygg kartet →",
+    backBtn: "← Tilbake til oppgavelisten",
+    mapKicker: "Arbeidsflyt-kart", mapH1: "Slik ser arbeidsflyten ut",
+    mapLead: "Sjekk at dette stemmer før dere går videre til å lete etter muligheter.",
+    redoBtn: "Tilbake til intervjuet", findOppBtn: "Finn AI-muligheter →",
+    oppKicker: "AI Opportunity Discovery", oppH1: "Hvor kan denne arbeidsflyten forbedres?",
+    oppLead: "Vurder tre typer løsning for hvert steg: AI, automatisering/vanlig programvare, og prosessforbedring — ikke bare AI.",
+    lblProblem: "Problem", lblWhy: "Hvorfor", lblAlternative: "Alternativ", lblChallenge: "Kritisk motsjekk",
+    selectForPriority: "Velg denne til prioritering", regenBtn: "Generer flere", toPrioritizeBtn: "TIL PRIORITERING →",
+    prioKicker: "Prioritering", prioH1: "Velg det beste problemet, ikke bare den kuleste ideen",
+    prioLead: "Score hver mulighet 0–5 på hver dimensjon. Totalscoren er et hjelpemiddel, ikke en fasit.",
+    noOpportunitiesYet: "Ingen muligheter generert ennå. Gå tilbake til forrige fase.",
+    useCase: "Use case", score: "Score",
+    pickUseCase: "Valgt use case for deep dive", pickPlaceholder: "— velg —",
+    toDeepDiveBtn: "DEEP DIVE PÅ VALGT USE CASE →", pickOneFirst: "Velg en use case først.",
+    matrixStrategic: "Strategic", matrixQuickWins: "Quick wins", matrixLowPriority: "Low priority",
+    matrixLowHanging: "Low-hanging fruit", matrixImpactAxis: "Impact →", matrixFeasAxis: "Feasibility →",
+    ddKicker: "Deep Dive", ddH1: "Nå undersøker dere:",
+    ddLead: "Forstå problemet ordentlig før dere designer løsningen. Fyll ut det dere vet.",
+    toSolutionsBtn: "UTFORSK LØSNINGER →",
+    solKicker: "Solution Exploration", solH1: "Ikke bli forelsket i den første løsningen",
+    solLead: "Bruk «Challenge this solution» på favoritten før dere velger.",
+    solutionLabel: "Løsning", lblArchitecture: "Arkitektur", lblHumanInLoop: "Human-in-the-loop",
+    lblComplexity: "Kompleksitet", lblEffort: "Innsats", lblBenefit: "Forventet gevinst",
+    lblChallengeResult: "Kritisk utfordring", challengeBtn: "CHALLENGE THIS SOLUTION",
+    selectThis: "Velg denne", toPilotBtn: "DESIGN PILOTEN →", pickSolutionFirst: "Velg en løsning først.",
+    pilotKicker: "Pilot Design", pilotH1: "Gjør ideen om til en pilot",
+    pilotLead: "Fyll ut selv, eller la Claude foreslå et førsteutkast.",
+    draftBtn: "La Claude foreslå et utkast →", toBriefBtn: "GENERER PILOT BRIEF →",
+    briefKicker: "Pilot Brief", briefH1: "Dette er det dere går ut av rommet med",
+    pasteBriefLabel: "Lim inn pilot brief-en fra Claude", showBriefBtn: "Vis brief →",
+    regenBriefBtn: "Generer på nytt", copyBriefBtn: "Kopier til utklippstavle",
+    mdBriefBtn: "Last ned som Markdown", pdfBriefBtn: "Skriv ut / lagre som PDF", copiedAlert: "Kopiert.",
+    ctaHeading: "Dere har identifisert en mulighet. Nå må dere teste om den faktisk fungerer.",
+    ctaInternalTitle: "Explore internally", ctaInternalBody: "Ta med pilotbrief-en og diskuter den internt. Se også",
+    ctaInternalLink: "AI-verktøykassen for ingeniører",
+    ctaYcpTitle: "Build a pilot with YCP", ctaYcpBody: "Vi hjelper dere å gjøre det valgte use-caset om til en fungerende prototype.",
+    ctaYcpBtn: "DISCUSS THE PILOT →",
+  },
+  en: {
+    phase_context: "Context", phase_workflow: "Workflow", phase_opportunities: "Opportunities",
+    phase_prioritize: "Prioritize", phase_deepdive: "Deep Dive", phase_solutions: "Solutions",
+    phase_pilot: "Pilot", phase_brief: "Brief",
+    phaseLabel: "Phase",
+    contextLead: "This is not a presentation about AI. You'll use AI to analyse your own work, identify opportunities, and design one concrete pilot.",
+    fCompany: "Company", fWebsite: "Website", fIndustry: "Industry", fName: "Your name",
+    fRole: "Your role (e.g. Drilling Engineer, HR Advisor)", fDepartment: "Department",
+    fPainPoints: "What are 2–3 things you spend a lot of time on? (optional)", fMode: "Mode",
+    modeFast: "Fast mode — 60 min", modeDeep: "Deep mode — 90 min",
+    modeFastShort: "Fast mode", modeDeepShort: "Deep mode",
+    researchBtn: "Research the company (optional) →", startBtn: "START DISCOVERY →", research: "Research",
+    csStep1: "Copy the prompt below.", csStep2: "Paste it into your own Claude conversation (claude.ai).",
+    csStep3: "Paste Claude's reply into the field below, and continue.",
+    copyPrompt: "Copy prompt", copied: "✓ Copied", pasteLabel: "Paste Claude's reply",
+    pastePlaceholder: "Paste here...", continueBtn: "Continue →", pasteEmpty: "Paste the reply first.",
+    parseFailed: "Couldn't read that in the expected format. Make sure you pasted the whole reply, then try again.",
+    workflowKicker: "Workflow discovery", workflowH1: "What do you actually do during a normal work week?",
+    workflowLead: "Write down 5–10 recurring activities you perform as",
+    workflowFieldLabel: "One activity per line",
+    workflowPlaceholder: "e.g.\nPrepare drilling reports\nReview offset well data\nAnalyse drilling parameters",
+    interviewBtn: "LET CLAUDE INTERVIEW YOU →", needOneActivity: "Write down at least one activity.",
+    interviewKicker: "AI interview", interviewH1: "Tell us about your workflow",
+    interviewLead: "Have the whole interview in your own Claude conversation. When Claude gives you a final JSON summary, paste it below.",
+    pasteJsonLabel: "Paste the workflow JSON from Claude", buildMapBtn: "Build the map →",
+    backBtn: "← Back to the activity list",
+    mapKicker: "Workflow map", mapH1: "Here's what the workflow looks like",
+    mapLead: "Check this is accurate before moving on to finding opportunities.",
+    redoBtn: "Back to the interview", findOppBtn: "Find AI opportunities →",
+    oppKicker: "AI Opportunity Discovery", oppH1: "Where could this workflow be improved?",
+    oppLead: "Consider three types of solution for each step: AI, automation/regular software, and process improvement — not just AI.",
+    lblProblem: "Problem", lblWhy: "Why", lblAlternative: "Alternative", lblChallenge: "Critical counter-check",
+    selectForPriority: "Select this for prioritization", regenBtn: "Generate more", toPrioritizeBtn: "TO PRIORITIZATION →",
+    prioKicker: "Prioritization", prioH1: "Pick the best problem, not just the coolest idea",
+    prioLead: "Score each opportunity 0–5 on each dimension. The total score is a helper, not a verdict.",
+    noOpportunitiesYet: "No opportunities generated yet. Go back to the previous phase.",
+    useCase: "Use case", score: "Score",
+    pickUseCase: "Selected use case for deep dive", pickPlaceholder: "— select —",
+    toDeepDiveBtn: "DEEP DIVE ON SELECTED USE CASE →", pickOneFirst: "Pick a use case first.",
+    matrixStrategic: "Strategic", matrixQuickWins: "Quick wins", matrixLowPriority: "Low priority",
+    matrixLowHanging: "Low-hanging fruit", matrixImpactAxis: "Impact →", matrixFeasAxis: "Feasibility →",
+    ddKicker: "Deep Dive", ddH1: "You are now investigating:",
+    ddLead: "Understand the problem properly before designing the solution. Fill in what you know.",
+    toSolutionsBtn: "EXPLORE SOLUTIONS →",
+    solKicker: "Solution Exploration", solH1: "Don't fall in love with the first solution",
+    solLead: "Use \"Challenge this solution\" on your favourite before you pick.",
+    solutionLabel: "Solution", lblArchitecture: "Architecture", lblHumanInLoop: "Human-in-the-loop",
+    lblComplexity: "Complexity", lblEffort: "Effort", lblBenefit: "Expected benefit",
+    lblChallengeResult: "Critical challenge", challengeBtn: "CHALLENGE THIS SOLUTION",
+    selectThis: "Select this", toPilotBtn: "DESIGN THE PILOT →", pickSolutionFirst: "Pick a solution first.",
+    pilotKicker: "Pilot Design", pilotH1: "Turn the idea into a pilot",
+    pilotLead: "Fill it in yourself, or let Claude suggest a first draft.",
+    draftBtn: "Let Claude suggest a draft →", toBriefBtn: "GENERATE PILOT BRIEF →",
+    briefKicker: "Pilot Brief", briefH1: "This is what you leave the room with",
+    pasteBriefLabel: "Paste the pilot brief from Claude", showBriefBtn: "Show brief →",
+    regenBriefBtn: "Regenerate", copyBriefBtn: "Copy to clipboard",
+    mdBriefBtn: "Download as Markdown", pdfBriefBtn: "Print / save as PDF", copiedAlert: "Copied.",
+    ctaHeading: "You've identified an opportunity. Now let's test whether it actually works.",
+    ctaInternalTitle: "Explore internally", ctaInternalBody: "Take the pilot brief with you and discuss it internally. See also",
+    ctaInternalLink: "the AI toolkit for engineers",
+    ctaYcpTitle: "Build a pilot with YCP", ctaYcpBody: "We'll help you turn the selected use case into a working prototype.",
+    ctaYcpBtn: "DISCUSS THE PILOT →",
+  },
+};
+
+// ---------- Header controls ----------
 
 document.addEventListener("DOMContentLoaded", () => {
-  initGate();
   const modeBtn = document.getElementById("mode-toggle");
-  modeBtn.textContent = state.mode === "fast" ? "Fast mode" : "Deep mode";
+  modeBtn.textContent = state.mode === "fast" ? t("modeFastShort") : t("modeDeepShort");
   modeBtn.addEventListener("click", () => {
     state.mode = state.mode === "fast" ? "deep" : "fast";
-    modeBtn.textContent = state.mode === "fast" ? "Fast mode" : "Deep mode";
+    modeBtn.textContent = state.mode === "fast" ? t("modeFastShort") : t("modeDeepShort");
     saveState();
   });
+
+  const langBtn = document.getElementById("lang-toggle");
+  langBtn.textContent = state.lang === "no" ? "EN" : "NO";
+  langBtn.addEventListener("click", () => {
+    state.lang = state.lang === "no" ? "en" : "no";
+    langBtn.textContent = state.lang === "no" ? "EN" : "NO";
+    modeBtn.textContent = state.mode === "fast" ? t("modeFastShort") : t("modeDeepShort");
+    saveState();
+    render();
+  });
+
+  render();
 });

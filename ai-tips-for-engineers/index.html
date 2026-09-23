@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI toolkit for engineers | YCP Consulting</title>
+<meta name="description" content="20 concrete tasks engineers use AI for, which Skills and tools to use, and how to build your own Skills, CLAUDE.md and memory that actually keeps quality up.">
+<link rel="canonical" href="https://adriandie.github.io/ycp-consulting/ai-tips-for-engineers/">
+<meta property="og:type" content="article">
+<meta property="og:title" content="AI toolkit for engineers | YCP Consulting">
+<meta property="og:description" content="20 concrete tasks engineers use AI for, which Skills and tools to use, and how to build your own Skills, CLAUDE.md and memory that actually keeps quality up.">
+<meta property="og:url" content="https://adriandie.github.io/ycp-consulting/ai-tips-for-engineers/">
+<meta property="og:image" content="https://adriandie.github.io/ycp-consulting/images/hero.jpg">
+<meta property="og:locale" content="en_US">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="AI toolkit for engineers | YCP Consulting">
+<meta name="twitter:description" content="20 concrete tasks engineers use AI for, which Skills and tools to use, and how to build your own Skills, CLAUDE.md and memory that actually keeps quality up.">
+<meta name="twitter:image" content="https://adriandie.github.io/ycp-consulting/images/hero.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;500;600&amp;family=Source+Serif+4:opsz,wght@8..60,300;8..60,400&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css?v=3">
+<link rel="icon" type="image/svg+xml" href="../images/favicon.svg">
+<link rel="icon" type="image/png" href="../images/favicon-32.png">
+<link rel="apple-touch-icon" href="../images/apple-touch-icon.png">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-inner">
+    <a href="../" class="logo"><img src="../images/logo.svg" alt="YCP Consulting" class="logo-img"></a>
+    <nav class="main-nav">
+      <a href="../tjenester/">Services</a>
+<a href="../slik-vi-jobber/">How we work</a>
+<a href="../priser/">Pricing</a>
+<a href="../innsikt/" class="current">Insights</a>
+<a href="../om-oss/">About</a>
+
+      <a href="../bli-konsulent/" class="btn-cta">Become a consultant</a>
+    </nav>
+    <button class="hamburger" aria-label="Menu"><span></span><span></span><span></span></button>
+  </div>
+</header>
+
+<section class="page-hero">
+  <p class="kicker">After the AI workshop</p>
+  <h1>AI toolkit for engineers: what you actually need to implement.</h1>
+  <p class="lead">This isn't a list of AI prompts. It's the concrete tools, Skills and habits that make what you learned in the workshop actually stick — week after week, not just the day we were there.</p>
+  <div class="resource-meta">
+    <span><strong>Reading time:</strong> ~15 min</span>
+    <span><strong>Audience:</strong> engineers and technical teams</span>
+    <span><strong>Prerequisite:</strong> access to Claude (the Skills feature)</span>
+  </div>
+  <p style="margin-top:20px;"><a href="../workshop/" style="color:#fff; border-bottom:1px solid var(--cyan);">Did you run the workshop with the interactive tool? Open it here →</a></p>
+</section>
+
+<section class="block">
+  <div class="content-grid">
+    <nav class="sidebar-nav">
+      <p class="section-kicker">On this page</p>
+      <a href="#why">Why this document exists</a>
+      <a href="#build-skill">Build your own Skill</a>
+      <a href="#claude-md">Get the AI to remember your company</a>
+      <a href="#memory">Memory and context drift</a>
+      <a href="#check-skill">Check a Skill before you trust it</a>
+      <a href="#20-tasks">20 tasks, 20 tools</a>
+      <a href="#next-steps">Next steps</a>
+    </nav>
+
+    <div class="prose">
+      <div class="toc" id="why">
+        <p class="section-kicker">Why this document exists</p>
+        <p>Most "AI workshops" end with an idea list nobody acts on. This page is meant to be read <em>after</em> the workshop, by you, and actually implemented in your day-to-day work. Everything below is something we actively use ourselves, not theory.</p>
+      </div>
+
+      <h2 id="build-skill">1. Build your own Skill</h2>
+      <p>The main exercise in the workshop was that every participant should leave with at least one own <strong>Skill</strong>: a reusable recipe that makes the AI solve a recurring task exactly the way you want it solved, every time, without re-explaining yourself.</p>
+      <p>Technically, a Skill is just a folder with one file, <code>SKILL.md</code>, plus optional helper files (scripts, templates, reference documents). The file has two parts: a short YAML header the AI uses to know <em>when</em> the skill is relevant, and an instructions section explaining <em>how</em> the task should be solved. The format was created by Anthropic and is now an open standard supported by Claude Code, Claude.ai, Claude Cowork, and several other AI tools.</p>
+
+      <div class="code-block"><span class="cm">---</span>
+<span class="kw">name</span>: offset-well-comparison
+<span class="kw">description</span>: Used when someone needs to compare
+  historical well data before a recommendation.
+  Triggered by "offset well", "compare wells".
+<span class="cm">---</span>
+
+<span class="cm"># Offset well comparison</span>
+
+When you get historical well data, always do this:
+1. List the wells in a table: date, depth, parameters.
+2. Flag deviations &gt;10% from the average, with a source reference.
+3. Write a short recommendation, mark uncertain numbers clearly.
+4. Never strip source references, even if the answer gets long.</div>
+
+      <p>Notice the structure: the skill does <em>not</em> say "be a good engineer". It locks in a concrete, repeatable working pattern you already know works. That's the difference between a Skill and a regular prompt: a prompt is forgotten when the conversation closes, a Skill sits ready the next time someone needs the same task solved.</p>
+
+      <ol class="steps">
+        <li>
+          <span class="step-num">01</span>
+          <div>
+            <h4>Pick one task you do often</h4>
+            <p>Don't start broad. Take one concrete, recurring task from the workshop's workflow mapping, something you can describe in three sentences.</p>
+          </div>
+        </li>
+        <li>
+          <span class="step-num">02</span>
+          <div>
+            <h4>Write down today's best practice, step by step</h4>
+            <p>What does the sharpest person on the team do differently from everyone else when solving exactly this task? That's what goes into the skill.</p>
+          </div>
+        </li>
+        <li>
+          <span class="step-num">03</span>
+          <div>
+            <h4>Ask the AI to build the skill with you</h4>
+            <p>You don't need to write the YAML format yourself. Describe the task in plain language and ask Claude to structure it as a Skill (Anthropic's official <code>skill-creator</code> does exactly this).</p>
+          </div>
+        </li>
+        <li>
+          <span class="step-num">04</span>
+          <div>
+            <h4>Test it on a real case, not a made-up example</h4>
+            <p>Run the skill on an actual case from last week. Check whether the result is something you'd genuinely send onward without editing.</p>
+          </div>
+        </li>
+        <li>
+          <span class="step-num">05</span>
+          <div>
+            <h4>Share it with the team, not just yourself</h4>
+            <p>A Skill that only sits with one person saves one person time. Shared across the team, the same quality level becomes the standard for everyone, not just the sharpest person.</p>
+          </div>
+        </li>
+      </ol>
+
+      <div class="callout">
+        <span class="callout-label">Tip</span>
+        <p>Before building a skill from scratch: check whether someone has already made a good one. There are large, curated collections of ready-made Skills (including Anthropic's own <code>anthropics/skills</code> collection and community collections like ComposioHQ's <code>awesome-claude-skills</code>). Reusing a proven skill is almost always faster than polishing your own from scratch — see point 4 for how to check it's actually safe first.</p>
+      </div>
+
+      <h2 id="claude-md">2. Get the AI to remember your company: CLAUDE.md</h2>
+      <p>Skills solve <em>individual tasks</em>. But you also want the AI to remember things that apply across everything: how you write, which systems you use, what's forbidden without approval. That's the job of a <strong>CLAUDE.md</strong> file: a simple text file the AI always reads first, in every project or every conversation.</p>
+      <p>Five rules that actually make a difference, drawn from Anthropic's own recommendations and established community practice:</p>
+      <ul>
+        <li><strong>Keep it short.</strong> Under 200 lines is recommended, and some teams manage with 50–60. Anything over ~300 lines and the AI starts losing precision because the instructions drown in noise.</li>
+        <li><strong>Be specific, not general.</strong> "Write clearly" helps nothing. "Always use a table for numeric comparisons, never prose" is something the AI can actually follow consistently.</li>
+        <li><strong>Only write what applies everywhere.</strong> Rules that only apply to one project belong in that project's own file, not in the main file every other task also has to read through.</li>
+        <li><strong>Don't over-structure.</strong> One good file beats five nested subfolders of rules overriding each other.</li>
+        <li><strong>Use HTML comments for notes to humans.</strong> <code>&lt;!-- like this --&gt;</code> gets stripped automatically before the AI sees it, so it's safe for internal explanations without spending the AI's context.</li>
+      </ul>
+
+      <h2 id="memory">3. Memory and context drift</h2>
+      <p>Most modern AI tools now have some form of <strong>memory</strong>: information carried between conversations without anyone pasting it in again each time. Used well, it saves enormous amounts of time. Used badly, it fills the context with stale information the AI never checks is still true.</p>
+      <ul>
+        <li><strong>Save decisions and preferences, not raw data.</strong> "We always use 14% employer tax in calculations" is good memory material. An entire report pasted in "just in case" is not.</li>
+        <li><strong>Never put sensitive information in memory.</strong> Passwords, personal ID numbers, contract terms under NDA: these belong in access-controlled systems, not an AI memory.</li>
+        <li><strong>Clean up memory regularly.</strong> Old, conflicting notes are the most common reason an AI suddenly "forgets" something it should have known — because it actually found two conflicting notes and guessed wrong.</li>
+      </ul>
+
+      <div class="callout warn">
+        <span class="callout-label">Practical trick: detect when the AI has taken on too much context</span>
+        <p>A long, technical conversation over time fills up the context window, and quality degrades gradually without it being obvious. A simple trick: add a standing instruction that the AI should always start every reply with a specific phrase, for example <em>"here's my answer, [your name]"</em>.</p>
+        <p>As long as the phrase (and the name) comes through correctly every time, the AI is still actively following instructions. If it starts forgetting the phrase, forgetting the name, or suddenly replies in a different language than the conversation, that's a reliable signal it's lost sharpness, and you should start a new session instead of pushing on in the same one.</p>
+      </div>
+
+      <h2 id="check-skill">4. Check a Skill before you trust it</h2>
+      <p>A Skill is, in practice, code and instructions someone else wrote, given permission to steer how the AI behaves. That makes it useful, and it makes it a real attack surface if you download one from an unknown source. Independent reviews have found malicious content in a non-trivial share of publicly shared skills, ranging from data theft to backdoors.</p>
+      <p>Use a Skill security tool before installing anything from outside your team, for example <strong>NVIDIA SkillSpector</strong> or a similar community skill-scanning tool. They check for hidden data collection, prompt injection and other suspicious patterns, and give you a concrete assessment before the skill gets access to anything.</p>
+      <div class="callout">
+        <span class="callout-label">Two good reasons to use a tool like this</span>
+        <p><strong>1)</strong> You're wondering whether a skill you found is safe to use. <strong>2)</strong> You're considering building something yourself, but want to first know whether an established, vetted skill already does the job, so you don't reinvent the wheel.</p>
+      </div>
+
+      <h2 id="20-tasks">5. 20 tasks, 20 tools</h2>
+      <p>These are the most frequent tasks we see engineers and technical teams actually use AI for, with the tool or type of Skill we'd recommend for each. Some are official Anthropic skills, some are well-established community skills, some are tools you probably already have access to, and some you should build yourself in the workshop.</p>
+
+      <table class="resource-table">
+        <thead>
+          <tr><th>Task</th><th>Recommended tool</th><th>Type</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Finding information scattered across Confluence/Jira</td><td>Atlassian Rovo (built-in AI search)</td><td><span class="badge b-tool">Existing tool</span></td></tr>
+          <tr><td>Stress-testing a technical decision before you commit</td><td>"grill-me" skill (asks critical questions until you have a shared picture)</td><td><span class="badge b-community">Community, established</span></td></tr>
+          <tr><td>Writing meeting notes from a transcript or bullet points</td><td>A custom skill with a fixed template per meeting type</td><td><span class="badge b-build">Build in the workshop</span></td></tr>
+          <tr><td>Code review before merging</td><td>Built-in code-review skill</td><td><span class="badge b-official">Official</span></td></tr>
+          <tr><td>Systematic debugging of a bug or deviation</td><td>Systematic-debugging skill</td><td><span class="badge b-official">Official</span></td></tr>
+          <tr><td>Security review of code or changes</td><td>Security-review skill</td><td><span class="badge b-official">Official</span></td></tr>
+          <tr><td>Structuring a technical plan before you build</td><td>Writing-plans / brainstorming skill</td><td><span class="badge b-official">Official</span></td></tr>
+          <tr><td>Creating or editing Word documents (contracts, reports)</td><td>Anthropic's docx skill</td><td><span class="badge b-official">Official</span></td></tr>
+          <tr><td>Creating or cleaning up Excel sheets</td><td>Anthropic's xlsx skill</td><td><span class="badge b-official">Official</span></td></tr>
+          <tr><td>Creating presentations</td><td>Anthropic's pptx skill</td><td><span class="badge b-official">Official</span></td></tr>
+          <tr><td>Reading and analysing PDFs (specs, contracts)</td><td>Anthropic's pdf skill</td><td><span class="badge b-official">Official</span></td></tr>
+          <tr><td>Building your own reusable AI recipes</td><td>Anthropic's skill-creator</td><td><span class="badge b-official">Official</span></td></tr>
+          <tr><td>Checking whether a skill is safe before installing</td><td>NVIDIA SkillSpector / skill-security-scan</td><td><span class="badge b-tool">Existing tool</span></td></tr>
+          <tr><td>Visualising data as charts or dashboards</td><td>Dataviz skill</td><td><span class="badge b-official">Official</span></td></tr>
+          <tr><td>Drawing architecture or process diagrams</td><td>Artifact-diagramming skill</td><td><span class="badge b-official">Official</span></td></tr>
+          <tr><td>Having a finished report waiting each morning</td><td>Claude Cowork on a fixed schedule</td><td><span class="badge b-tool">Existing tool</span></td></tr>
+          <tr><td>Working on several parallel technical threads without mixing them up</td><td>Using-git-worktrees skill</td><td><span class="badge b-official">Official</span></td></tr>
+          <tr><td>Getting a critical second opinion on your own work before delivery</td><td>Requesting/receiving-code-review skill</td><td><span class="badge b-official">Official</span></td></tr>
+          <tr><td>Keeping the AI consistent across sessions and projects</td><td>CLAUDE.md + memory architecture (see points 2–3)</td><td><span class="badge b-build">Own practice</span></td></tr>
+          <tr><td>Cleaning up a memory that's become messy over time</td><td>Anthropic's consolidate-memory skill</td><td><span class="badge b-official">Official</span></td></tr>
+        </tbody>
+      </table>
+
+      <p style="font-size:14px; color:#767676;">"Official" means a skill published by Anthropic itself. "Community, established" means an openly shared skill with significant use and a good track record — but review it yourself with a security tool (point 4) before adopting it. "Existing tool" is not a Claude Skill, but something you probably already have access to.</p>
+
+      <h2 id="next-steps">Next steps</h2>
+      <p>You've now identified a concrete opportunity in the workshop, and the tools above to actually do something about it. Two ways forward:</p>
+      <ul>
+        <li><strong>Test internally.</strong> Take the pilot brief from the workshop and the skills you built, and see how far the team gets on its own over the coming weeks.</li>
+        <li><strong>Build the pilot together with YCP.</strong> We'll help you take the selected use case further into a working prototype, with the same quality assurance as the rest of our deliveries.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<div class="cta-band">
+  <div class="cta-band-inner">
+    <h2>Ready to discuss the pilot further?</h2>
+    <a href="mailto:kontakt@ycpconsulting.no" class="btn-outline">Get in touch</a>
+  </div>
+</div>
+
+<footer class="site-footer">
+  <div class="footer-inner">
+    <div class="footer-grid">
+      <div>
+        <a href="../" class="logo"><img src="../images/logo-white.svg" alt="YCP Consulting" class="logo-img"></a>
+        <p>Technology projects built by selected student consultants at the University of Stavanger, quality-assured all the way.</p>
+      </div>
+      <div class="footer-col">
+        <h4>Company</h4>
+        <a href="../tjenester/">Services</a>
+<a href="../slik-vi-jobber/">How we work</a>
+<a href="../priser/">Pricing</a>
+<a href="../innsikt/">Insights</a>
+<a href="../bli-konsulent/">Become a consultant</a>
+<a href="../om-oss/">About</a>
+<a href="../nyheter/">News</a>
+
+      </div>
+      <div class="footer-col">
+        <h4>Contact</h4>
+        <a href="mailto:kontakt@ycpconsulting.no">kontakt@ycpconsulting.no</a>
+        <a href="../bli-konsulent/">Become a consultant</a>
+      </div>
+      <div class="footer-col">
+        <h4>Stavanger</h4>
+        <a href="#">University of Stavanger</a>
+        <a href="#">4021 Stavanger, Norway</a>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>&copy; 2026 YCP Consulting AS</span>
+      <span>Org.nr. under registration</span>
+    </div>
+  </div>
+</footer>
+<a href="mailto:kontakt@ycpconsulting.no" class="chat-bubble">Talk to us &rarr;</a>
+<script src="../app.js"></script>
+</body>
+</html>
