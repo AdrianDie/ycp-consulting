@@ -1,7 +1,7 @@
 // AI Workflow Discovery — YCP Consulting workshop tool.
 // Talks only to the ycp-workshop-worker Cloudflare Worker (never to Anthropic directly).
 
-const WORKER_URL = "https://ycp-workshop-worker.YOUR-SUBDOMAIN.workers.dev"; // set after `wrangler deploy`
+const WORKER_URL = "https://ycp-workshop-worker.dietrichs-mkt.workers.dev";
 
 const PHASES = [
   { id: "context", label: "Context" },
