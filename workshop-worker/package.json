@@ -1,0 +1,16 @@
+{
+  "name": "ycp-workshop-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloudflare Worker: secure proxy to the Anthropic API for the YCP AI Workflow Discovery workshop tool.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.70.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

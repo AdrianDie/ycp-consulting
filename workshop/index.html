@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Workflow Discovery | YCP Consulting</title>
+<meta name="description" content="Det interaktive verktøyet YCP Consulting bruker til å kjøre en 60–90 minutters AI-discovery-workshop: fra arbeidsflyt til en konkret pilotbrief.">
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;500;600&amp;family=Source+Serif+4:opsz,wght@8..60,300;8..60,400&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="workshop.css?v=2">
+<link rel="icon" type="image/svg+xml" href="../images/favicon.svg">
+</head>
+<body class="workshop-body">
+
+<div id="gate" class="gate">
+  <div class="gate-box">
+    <p class="logo" style="margin-bottom:24px;">YCP<span>.</span> Consulting</p>
+    <h1>AI Workflow Discovery</h1>
+    <p class="lead">Skriv inn tilgangskoden du fikk fra workshop-lederen for å starte.</p>
+    <input id="gate-key" type="password" placeholder="Tilgangskode" autocomplete="off">
+    <button id="gate-submit" class="btn-cta">Fortsett →</button>
+    <p id="gate-error" class="gate-error"></p>
+  </div>
+</div>
+
+<div id="app" class="app-shell" hidden>
+  <header class="app-header">
+    <span class="logo">YCP<span>.</span> Consulting</span>
+    <div class="app-header-progress">
+      <span id="phase-label">Fase 1 / 9</span>
+      <div class="progress-track"><div id="progress-fill" class="progress-fill"></div></div>
+    </div>
+    <button id="mode-toggle" class="mode-toggle" title="Bytt mellom Fast og Deep mode">Fast mode</button>
+  </header>
+
+  <div class="app-body">
+    <nav id="phase-nav" class="phase-nav"></nav>
+    <main id="workspace" class="workspace"></main>
+  </div>
+</div>
+
+<div id="print-root" class="print-root"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
